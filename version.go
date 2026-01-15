@@ -5,10 +5,17 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // SemanticVersionRegex matches semantic version strings.
 var SemanticVersionRegex = regexp.MustCompile(`^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([^+]+))?(?:\+(.+))?$`)
+
+// simpleNumericRegex matches simple numeric versions like "1" or "42".
+var simpleNumericRegex = regexp.MustCompile(`^\d+$`)
+
+// versionCache caches parsed versions to avoid re-parsing the same strings.
+var versionCache sync.Map
 
 // VersionInfo represents a parsed version with its components.
 type VersionInfo struct {
@@ -26,12 +33,18 @@ func ParseVersion(s string) (*VersionInfo, error) {
 		return nil, fmt.Errorf("empty version string")
 	}
 
+	// Check cache first
+	if cached, ok := versionCache.Load(s); ok {
+		return cached.(*VersionInfo), nil
+	}
+
 	v := &VersionInfo{Original: s}
 
 	// Handle simple numeric versions
-	if match, _ := regexp.MatchString(`^\d+$`, s); match {
+	if simpleNumericRegex.MatchString(s) {
 		major, _ := strconv.Atoi(s)
 		v.Major = major
+		versionCache.Store(s, v)
 		return v, nil
 	}
 
@@ -48,6 +61,7 @@ func ParseVersion(s string) (*VersionInfo, error) {
 		}
 		v.Prerelease = matches[4]
 		v.Build = matches[5]
+		versionCache.Store(s, v)
 		return v, nil
 	}
 
@@ -74,6 +88,7 @@ func ParseVersion(s string) (*VersionInfo, error) {
 		if len(parts) > 3 && v.Prerelease == "" {
 			v.Prerelease = strings.Join(parts[3:], ".")
 		}
+		versionCache.Store(s, v)
 		return v, nil
 	}
 
@@ -84,6 +99,7 @@ func ParseVersion(s string) (*VersionInfo, error) {
 		if len(parts) > 1 {
 			v.Prerelease = parts[1]
 		}
+		versionCache.Store(s, v)
 		return v, nil
 	}
 
