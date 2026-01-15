@@ -15,7 +15,32 @@ var SemanticVersionRegex = regexp.MustCompile(`^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:
 var simpleNumericRegex = regexp.MustCompile(`^\d+$`)
 
 // versionCache caches parsed versions to avoid re-parsing the same strings.
-var versionCache sync.Map
+var versionCache = &boundedCache{
+	items: make(map[string]*VersionInfo),
+	max:   10000,
+}
+
+type boundedCache struct {
+	mu    sync.RWMutex
+	items map[string]*VersionInfo
+	max   int
+}
+
+func (c *boundedCache) Load(key string) (*VersionInfo, bool) {
+	c.mu.RLock()
+	v, ok := c.items[key]
+	c.mu.RUnlock()
+	return v, ok
+}
+
+func (c *boundedCache) Store(key string, value *VersionInfo) {
+	c.mu.Lock()
+	if len(c.items) >= c.max {
+		c.items = make(map[string]*VersionInfo)
+	}
+	c.items[key] = value
+	c.mu.Unlock()
+}
 
 // VersionInfo represents a parsed version with its components.
 type VersionInfo struct {
@@ -35,7 +60,7 @@ func ParseVersion(s string) (*VersionInfo, error) {
 
 	// Check cache first
 	if cached, ok := versionCache.Load(s); ok {
-		return cached.(*VersionInfo), nil
+		return cached, nil
 	}
 
 	v := &VersionInfo{Original: s}
