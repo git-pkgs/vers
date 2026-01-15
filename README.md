@@ -186,6 +186,18 @@ go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 ```
 
+### Run Benchmarks
+
+```bash
+go test -bench=. -benchmem
+```
+
+Run specific benchmarks:
+
+```bash
+go test -bench=BenchmarkContains -benchmem
+```
+
 ## License
 
 MIT
