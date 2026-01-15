@@ -6,55 +6,55 @@ import "testing"
 
 func BenchmarkParse_VersURI_Simple(b *testing.B) {
 	for b.Loop() {
-		Parse("vers:npm/>=1.2.3")
+		_, _ = Parse("vers:npm/>=1.2.3")
 	}
 }
 
 func BenchmarkParse_VersURI_Complex(b *testing.B) {
 	for b.Loop() {
-		Parse("vers:npm/>=1.2.3|<2.0.0|!=1.5.0")
+		_, _ = Parse("vers:npm/>=1.2.3|<2.0.0|!=1.5.0")
 	}
 }
 
 func BenchmarkParseNative_Npm_Caret(b *testing.B) {
 	for b.Loop() {
-		ParseNative("^1.2.3", "npm")
+		_, _ = ParseNative("^1.2.3", "npm")
 	}
 }
 
 func BenchmarkParseNative_Npm_Tilde(b *testing.B) {
 	for b.Loop() {
-		ParseNative("~1.2.3", "npm")
+		_, _ = ParseNative("~1.2.3", "npm")
 	}
 }
 
 func BenchmarkParseNative_Npm_Range(b *testing.B) {
 	for b.Loop() {
-		ParseNative(">=1.0.0 <2.0.0", "npm")
+		_, _ = ParseNative(">=1.0.0 <2.0.0", "npm")
 	}
 }
 
 func BenchmarkParseNative_Npm_Or(b *testing.B) {
 	for b.Loop() {
-		ParseNative("^1.0.0 || ^2.0.0 || ^3.0.0", "npm")
+		_, _ = ParseNative("^1.0.0 || ^2.0.0 || ^3.0.0", "npm")
 	}
 }
 
 func BenchmarkParseNative_Gem_Pessimistic(b *testing.B) {
 	for b.Loop() {
-		ParseNative("~> 1.2.3", "gem")
+		_, _ = ParseNative("~> 1.2.3", "gem")
 	}
 }
 
 func BenchmarkParseNative_Pypi_Compatible(b *testing.B) {
 	for b.Loop() {
-		ParseNative("~=1.4.2", "pypi")
+		_, _ = ParseNative("~=1.4.2", "pypi")
 	}
 }
 
 func BenchmarkParseNative_Maven_Bracket(b *testing.B) {
 	for b.Loop() {
-		ParseNative("[1.0,2.0)", "maven")
+		_, _ = ParseNative("[1.0,2.0)", "maven")
 	}
 }
 
@@ -153,12 +153,12 @@ func BenchmarkIntersect_ManyRanges(b *testing.B) {
 
 func BenchmarkSatisfies_VersURI(b *testing.B) {
 	for b.Loop() {
-		Satisfies("1.5.0", "vers:npm/>=1.0.0|<2.0.0", "")
+		_, _ = Satisfies("1.5.0", "vers:npm/>=1.0.0|<2.0.0", "")
 	}
 }
 
 func BenchmarkSatisfies_Native(b *testing.B) {
 	for b.Loop() {
-		Satisfies("1.5.0", "^1.2.3", "npm")
+		_, _ = Satisfies("1.5.0", "^1.2.3", "npm")
 	}
 }
