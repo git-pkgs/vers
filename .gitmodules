@@ -1,0 +1,3 @@
+[submodule "testdata/vers-spec"]
+	path = testdata/vers-spec
+	url = https://github.com/package-url/vers-spec.git

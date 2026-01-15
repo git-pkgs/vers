@@ -7,6 +7,8 @@ import "strings"
 type Range struct {
 	Intervals  []Interval
 	Exclusions []string // Versions to exclude (from != constraints)
+	// RawConstraints stores the original constraints for VERS output (not merged)
+	RawConstraints []Interval
 }
 
 // NewRange creates a new Range from intervals.
@@ -73,7 +75,7 @@ func (r *Range) Union(other *Range) *Range {
 	allIntervals = append(allIntervals, r.Intervals...)
 	allIntervals = append(allIntervals, other.Intervals...)
 
-	// Merge overlapping intervals
+	// Merge overlapping intervals for containment checking
 	merged := mergeIntervals(allIntervals)
 
 	// Combine exclusions (intersection of exclusions for union)
@@ -87,13 +89,39 @@ func (r *Range) Union(other *Range) *Range {
 		}
 	}
 
-	return &Range{Intervals: merged, Exclusions: exclusions}
+	// Combine raw constraints (unmerged) for VERS output
+	rawConstraints := make([]Interval, 0, len(r.RawConstraints)+len(other.RawConstraints))
+	if len(r.RawConstraints) > 0 {
+		rawConstraints = append(rawConstraints, r.RawConstraints...)
+	} else {
+		rawConstraints = append(rawConstraints, r.Intervals...)
+	}
+	if len(other.RawConstraints) > 0 {
+		rawConstraints = append(rawConstraints, other.RawConstraints...)
+	} else {
+		rawConstraints = append(rawConstraints, other.Intervals...)
+	}
+
+	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints}
 }
 
 // Intersect returns a new Range that is the intersection of this range and another.
 func (r *Range) Intersect(other *Range) *Range {
+	// Combine raw constraints for VERS output (preserved even if result is empty)
+	rawConstraints := make([]Interval, 0, len(r.RawConstraints)+len(other.RawConstraints))
+	if len(r.RawConstraints) > 0 {
+		rawConstraints = append(rawConstraints, r.RawConstraints...)
+	} else {
+		rawConstraints = append(rawConstraints, r.Intervals...)
+	}
+	if len(other.RawConstraints) > 0 {
+		rawConstraints = append(rawConstraints, other.RawConstraints...)
+	} else {
+		rawConstraints = append(rawConstraints, other.Intervals...)
+	}
+
 	if r.IsEmpty() || other.IsEmpty() {
-		return &Range{}
+		return &Range{RawConstraints: rawConstraints}
 	}
 
 	// Intersect each pair of intervals
@@ -126,7 +154,7 @@ func (r *Range) Intersect(other *Range) *Range {
 		}
 	}
 
-	return &Range{Intervals: merged, Exclusions: exclusions}
+	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints}
 }
 
 // Exclude returns a new Range that excludes the given version.

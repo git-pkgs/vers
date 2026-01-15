@@ -31,11 +31,20 @@ func ParseConstraint(s string) (*Constraint, error) {
 		if version == "" {
 			return nil, fmt.Errorf("invalid constraint format: %s", s)
 		}
+		version = stripVPrefix(version)
 		return &Constraint{Operator: operator, Version: version}, nil
 	}
 
 	// No operator found, treat as exact match
-	return &Constraint{Operator: "=", Version: s}, nil
+	return &Constraint{Operator: "=", Version: stripVPrefix(s)}, nil
+}
+
+// stripVPrefix removes a leading 'v' or 'V' from version strings.
+func stripVPrefix(version string) string {
+	if len(version) > 1 && (version[0] == 'v' || version[0] == 'V') {
+		return version[1:]
+	}
+	return version
 }
 
 // ToInterval converts this constraint to an interval.

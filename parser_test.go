@@ -394,7 +394,7 @@ func TestToVersString(t *testing.T) {
 	}{
 		{"unbounded", Unbounded(), "npm", "vers:npm/*"},
 		{"empty", Empty(), "npm", "vers:npm/"},
-		{"exact", Exact("1.0.0"), "npm", "vers:npm/=1.0.0"},
+		{"exact", Exact("1.0.0"), "npm", "vers:npm/1.0.0"},
 		{"greater than", GreaterThan("1.0.0", true), "npm", "vers:npm/>=1.0.0"},
 		{"less than", LessThan("2.0.0", false), "npm", "vers:npm/<2.0.0"},
 		{
