@@ -181,7 +181,7 @@ func (p *Parser) parseConstraints(constraintsStr, scheme string) (*Range, error)
 			continue
 		}
 
-		constraint, err := ParseConstraint(part)
+		constraint, err := parseConstraintWithScheme(part, scheme)
 		if err != nil {
 			return nil, err
 		}
@@ -630,7 +630,7 @@ func (p *Parser) parseGoRange(s string) (*Range, error) {
 		parts := strings.Split(s, ",")
 		var result *Range
 		for _, part := range parts {
-			constraint, err := ParseConstraint(strings.TrimSpace(part))
+			constraint, err := parseConstraintWithScheme(strings.TrimSpace(part), "go")
 			if err != nil {
 				return nil, err
 			}
