@@ -721,8 +721,8 @@ func splitMavenVersionWithSeparators(s string) ([]string, []bool) {
 	var afterDash []bool
 	var current strings.Builder
 	var lastWasDigit bool
-	var firstChar bool = true
-	var currentAfterDash bool = false // first component is never after dash
+	firstChar := true
+	currentAfterDash := false // first component is never after dash
 
 	for _, c := range s {
 		if c == '.' || c == '-' {
