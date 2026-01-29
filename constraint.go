@@ -19,10 +19,19 @@ type Constraint struct {
 
 // ParseConstraint parses a constraint string into a Constraint.
 func ParseConstraint(s string) (*Constraint, error) {
+	return parseConstraintWithScheme(s, "")
+}
+
+// parseConstraintWithScheme parses a constraint with scheme-specific handling.
+// For Go/golang schemes, the v prefix is preserved.
+func parseConstraintWithScheme(s, scheme string) (*Constraint, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil, fmt.Errorf("empty constraint")
 	}
+
+	// Go versions preserve the v prefix
+	preserveVPrefix := scheme == "go" || scheme == "golang"
 
 	matches := operatorRegex.FindStringSubmatch(s)
 	if matches != nil {
@@ -31,12 +40,18 @@ func ParseConstraint(s string) (*Constraint, error) {
 		if version == "" {
 			return nil, fmt.Errorf("invalid constraint format: %s", s)
 		}
-		version = stripVPrefix(version)
+		if !preserveVPrefix {
+			version = stripVPrefix(version)
+		}
 		return &Constraint{Operator: operator, Version: version}, nil
 	}
 
 	// No operator found, treat as exact match
-	return &Constraint{Operator: "=", Version: stripVPrefix(s)}, nil
+	version := s
+	if !preserveVPrefix {
+		version = stripVPrefix(s)
+	}
+	return &Constraint{Operator: "=", Version: version}, nil
 }
 
 // stripVPrefix removes a leading 'v' or 'V' from version strings.
