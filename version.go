@@ -8,8 +8,8 @@ import (
 	"sync"
 )
 
-// SemanticVersionRegex matches semantic version strings.
-var SemanticVersionRegex = regexp.MustCompile(`^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([^+]+))?(?:\+(.+))?$`)
+// SemanticVersionRegex matches semantic version strings (with optional v prefix).
+var SemanticVersionRegex = regexp.MustCompile(`^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([^+]+))?(?:\+(.+))?$`)
 
 // simpleNumericRegex matches simple numeric versions like "1" or "42".
 var simpleNumericRegex = regexp.MustCompile(`^\d+$`)
