@@ -383,6 +383,90 @@ func TestParseRpmRange(t *testing.T) {
 	}
 }
 
+func TestParseHexRange(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		version string
+		want    bool
+	}{
+		// Pessimistic operator
+		{"~> 1.2.3 includes exact", "~> 1.2.3", "1.2.3", true},
+		{"~> 1.2.3 includes patch", "~> 1.2.3", "1.2.9", true},
+		{"~> 1.2.3 excludes minor", "~> 1.2.3", "1.3.0", false},
+		{"~> 1.2.3 excludes below", "~> 1.2.3", "1.2.2", false},
+		{"~> 2.0 includes minor", "~> 2.0", "2.9.9", true},
+		{"~> 2.0 excludes major", "~> 2.0", "3.0.0", false},
+		{"~> 2.1 includes above", "~> 2.1", "2.9.9", true},
+		{"~> 2.1 excludes major", "~> 2.1", "3.0.0", false},
+		{"~> 2.1 excludes below", "~> 2.1", "2.0.9", false},
+
+		// Exact match with ==
+		{"== 1.2.3 matches", "== 1.2.3", "1.2.3", true},
+		{"== 1.2.3 excludes above", "== 1.2.3", "1.2.4", false},
+		{"== 1.2.3 excludes below", "== 1.2.3", "1.2.2", false},
+
+		// Comparison operators
+		{">= 1.0.0 includes exact", ">= 1.0.0", "1.0.0", true},
+		{">= 1.0.0 includes above", ">= 1.0.0", "2.0.0", true},
+		{">= 1.0.0 excludes below", ">= 1.0.0", "0.9.0", false},
+		{"> 1.0.0 excludes exact", "> 1.0.0", "1.0.0", false},
+		{"> 1.0.0 includes above", "> 1.0.0", "1.0.1", true},
+		{"<= 2.0.0 includes exact", "<= 2.0.0", "2.0.0", true},
+		{"<= 2.0.0 excludes above", "<= 2.0.0", "2.0.1", false},
+		{"< 2.0.0 excludes exact", "< 2.0.0", "2.0.0", false},
+		{"< 2.0.0 includes below", "< 2.0.0", "1.9.9", true},
+
+		// Not equal
+		{"!= 1.5.0 includes other", "!= 1.5.0", "1.4.0", true},
+		{"!= 1.5.0 includes above", "!= 1.5.0", "1.6.0", true},
+		{"!= 1.5.0 excludes exact", "!= 1.5.0", "1.5.0", false},
+
+		// And conjunction
+		{">= 1.0.0 and < 2.0.0 includes", ">= 1.0.0 and < 2.0.0", "1.5.0", true},
+		{">= 1.0.0 and < 2.0.0 excludes below", ">= 1.0.0 and < 2.0.0", "0.9.0", false},
+		{">= 1.0.0 and < 2.0.0 excludes above", ">= 1.0.0 and < 2.0.0", "2.0.0", false},
+
+		// Or disjunction
+		{"~> 1.0 or ~> 2.0 includes first", "~> 1.0 or ~> 2.0", "1.5.0", true},
+		{"~> 1.0 or ~> 2.0 includes second", "~> 1.0 or ~> 2.0", "2.5.0", true},
+		{"~> 1.0 or ~> 2.0 excludes above", "~> 1.0 or ~> 2.0", "3.0.0", false},
+
+		// Combined and/or with exclusion
+		{"~> 1.0 and != 1.5.0 includes", "~> 1.0 and != 1.5.0", "1.4.0", true},
+		{"~> 1.0 and != 1.5.0 excludes version", "~> 1.0 and != 1.5.0", "1.5.0", false},
+		{"~> 1.0 and != 1.5.0 excludes major", "~> 1.0 and != 1.5.0", "2.0.0", false},
+	}
+
+	parser := NewParser()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := parser.ParseNative(tt.input, "hex")
+			if err != nil {
+				t.Fatalf("ParseNative(%q, hex) error = %v", tt.input, err)
+			}
+			got := r.Contains(tt.version)
+			if got != tt.want {
+				t.Errorf("Contains(%q) = %v, want %v", tt.version, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseHexElixirAlias(t *testing.T) {
+	parser := NewParser()
+	r, err := parser.ParseNative("~> 1.2.3", "elixir")
+	if err != nil {
+		t.Fatalf("ParseNative with elixir scheme error = %v", err)
+	}
+	if !r.Contains("1.2.3") {
+		t.Error("elixir scheme should contain 1.2.3")
+	}
+	if r.Contains("1.3.0") {
+		t.Error("elixir scheme should not contain 1.3.0")
+	}
+}
+
 func TestToVersString(t *testing.T) {
 	parser := NewParser()
 
