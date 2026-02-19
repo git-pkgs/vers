@@ -75,6 +75,12 @@ func TestParseNpmRange(t *testing.T) {
 		{"~1.2.3 excludes minor", "~1.2.3", "1.3.0", false},
 		{"~1.2.0 includes patch", "~1.2.0", "1.2.9", true},
 		{"~1.2.0 excludes minor", "~1.2.0", "1.3.0", false},
+		{"~1.0.0 includes patch", "~1.0.0", "1.0.9", true},
+		{"~1.0.0 excludes minor", "~1.0.0", "1.1.0", false},
+		{"~1.0 includes patch", "~1.0", "1.0.9", true},
+		{"~1.0 excludes minor", "~1.0", "1.1.0", false},
+		{"~1 includes minor", "~1", "1.9.0", true},
+		{"~1 excludes major", "~1", "2.0.0", false},
 
 		// X-ranges
 		{"1.x includes 1.0.0", "1.x", "1.0.0", true},

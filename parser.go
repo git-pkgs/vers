@@ -441,10 +441,16 @@ func (p *Parser) parseTildeRange(version string) (*Range, error) {
 		}), nil
 	}
 
+	segments := strings.Count(version, ".") + 1
+
 	var upper string
-	if v.Minor > 0 || v.Patch > 0 {
+	if segments >= 2 {
+		// ~1.2.3 := >=1.2.3 <1.3.0
+		// ~1.0.0 := >=1.0.0 <1.1.0
+		// ~1.0   := >=1.0.0 <1.1.0
 		upper = fmt.Sprintf("%d.%d.0", v.Major, v.Minor+1)
 	} else {
+		// ~1 := >=1.0.0 <2.0.0
 		upper = fmt.Sprintf("%d.0.0", v.Major+1)
 	}
 
