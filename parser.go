@@ -51,6 +51,8 @@ func (p *Parser) ParseNative(constraint string, scheme string) (*Range, error) {
 		return p.parseCargoRange(constraint)
 	case "go", "golang":
 		return p.parseGoRange(constraint)
+	case "hex", "elixir":
+		return p.parseHexRange(constraint)
 	case "deb", "debian":
 		return p.parseDebianRange(constraint)
 	case "rpm":
@@ -655,6 +657,78 @@ func (p *Parser) parseGoRange(s string) (*Range, error) {
 	}
 
 	return p.parseConstraints(s, "go")
+}
+
+// hex/elixir: ~> 1.2.3, >= 1.0.0 and < 2.0.0, ~> 1.0 or ~> 2.0
+func (p *Parser) parseHexRange(s string) (*Range, error) {
+	s = strings.TrimSpace(s)
+
+	// Handle "or" disjunction first
+	if strings.Contains(s, " or ") {
+		parts := strings.Split(s, " or ")
+		var result *Range
+		for _, part := range parts {
+			r, err := p.parseHexSingleRange(strings.TrimSpace(part))
+			if err != nil {
+				return nil, err
+			}
+			if result == nil {
+				result = r
+			} else {
+				result = result.Union(r)
+			}
+		}
+		return result, nil
+	}
+
+	return p.parseHexSingleRange(s)
+}
+
+func (p *Parser) parseHexSingleRange(s string) (*Range, error) {
+	// Handle "and" conjunction
+	if strings.Contains(s, " and ") {
+		parts := strings.Split(s, " and ")
+		var result *Range
+		for _, part := range parts {
+			r, err := p.parseHexConstraint(strings.TrimSpace(part))
+			if err != nil {
+				return nil, err
+			}
+			if result == nil {
+				result = r
+			} else {
+				result = result.Intersect(r)
+			}
+		}
+		return result, nil
+	}
+
+	return p.parseHexConstraint(s)
+}
+
+func (p *Parser) parseHexConstraint(s string) (*Range, error) {
+	// Pessimistic operator: ~> 1.2.3
+	if strings.HasPrefix(s, "~>") {
+		version := strings.TrimSpace(s[2:])
+		return p.parsePessimisticRange(version)
+	}
+
+	// Normalize == to = for internal constraint parsing
+	normalized := strings.Replace(s, "==", "=", 1)
+	constraint, err := ParseConstraint(normalized)
+	if err != nil {
+		return nil, err
+	}
+
+	if constraint.IsExclusion() {
+		return Unbounded().Exclude(constraint.Version), nil
+	}
+
+	interval, ok := constraint.ToInterval()
+	if !ok {
+		return nil, fmt.Errorf("invalid hex constraint: %s", s)
+	}
+	return NewRange([]Interval{interval}), nil
 }
 
 // debian: >= 1.0, << 2.0
