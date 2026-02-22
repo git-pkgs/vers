@@ -312,6 +312,33 @@ func TestIntervalUnion(t *testing.T) {
 				return r.MinInclusive && r.MaxInclusive
 			},
 		},
+		{
+			"unbounded min with bounded",
+			LessThanInterval("2.0.0", true),
+			NewInterval("1.0.0", "3.0.0", true, true),
+			false,
+			func(r *Interval) bool {
+				return r.Min == "" && r.Max == "3.0.0" && r.MaxInclusive
+			},
+		},
+		{
+			"bounded with unbounded max",
+			NewInterval("1.0.0", "3.0.0", true, true),
+			GreaterThanInterval("2.0.0", true),
+			false,
+			func(r *Interval) bool {
+				return r.Min == "1.0.0" && r.MinInclusive && r.Max == ""
+			},
+		},
+		{
+			"unbounded min with unbounded max",
+			LessThanInterval("2.0.0", true),
+			GreaterThanInterval("1.0.0", true),
+			false,
+			func(r *Interval) bool {
+				return r.Min == "" && r.Max == ""
+			},
+		},
 	}
 
 	for _, tt := range tests {
