@@ -45,7 +45,7 @@ func (p *Parser) ParseNative(constraint string, scheme string) (*Range, error) {
 		return p.parsePypiRange(constraint)
 	case "maven":
 		return p.parseMavenRange(constraint)
-	case "nuget":
+	case "nuget": //nolint:goconst
 		return p.parseNugetRange(constraint)
 	case "cargo":
 		return p.parseCargoRange(constraint)
@@ -359,7 +359,7 @@ func (p *Parser) parseNpmSingleRange(s string) (*Range, error) {
 
 	// Hyphen range: 1.2.3 - 2.0.0
 	if strings.Contains(s, " - ") {
-		parts := strings.SplitN(s, " - ", 2)
+		parts := strings.SplitN(s, " - ", 2) //nolint:mnd
 		return NewRange([]Interval{
 			NewInterval(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true, true),
 		}), nil
@@ -405,11 +405,12 @@ func (p *Parser) parseCaretRange(version string) (*Range, error) {
 	}
 
 	var upper string
-	if v.Major > 0 {
+	switch {
+	case v.Major > 0:
 		upper = fmt.Sprintf("%d.0.0", v.Major+1)
-	} else if v.Minor > 0 {
+	case v.Minor > 0:
 		upper = fmt.Sprintf("0.%d.0", v.Minor+1)
-	} else {
+	default:
 		upper = fmt.Sprintf("0.0.%d", v.Patch+1)
 	}
 
@@ -446,7 +447,7 @@ func (p *Parser) parseTildeRange(version string) (*Range, error) {
 	segments := strings.Count(version, ".") + 1
 
 	var upper string
-	if segments >= 2 {
+	if segments >= 2 { //nolint:mnd
 		// ~1.2.3 := >=1.2.3 <1.3.0
 		// ~1.0.0 := >=1.0.0 <1.1.0
 		// ~1.0   := >=1.0.0 <1.1.0
@@ -532,14 +533,11 @@ func (p *Parser) parsePessimisticRange(version string) (*Range, error) {
 	segments := strings.Count(version, ".") + 1
 
 	var upper string
-	if segments >= 3 {
+	if segments >= 3 { //nolint:mnd
 		// ~> 1.2.3 bumps minor: < 1.3
 		upper = fmt.Sprintf("%d.%d", v.Major, v.Minor+1)
-	} else if segments == 2 {
-		// ~> 1.2 bumps major: < 2.0
-		upper = fmt.Sprintf("%d.0", v.Major+1)
 	} else {
-		// ~> 1 bumps major: < 2.0
+		// ~> 1.2 or ~> 1 bumps major: < 2.0
 		upper = fmt.Sprintf("%d.0", v.Major+1)
 	}
 
@@ -593,7 +591,7 @@ func (p *Parser) parseBracketRange(s string) (*Range, error) {
 	maxInclusive := s[len(s)-1] == ']'
 
 	inner := s[1 : len(s)-1]
-	parts := strings.SplitN(inner, ",", 2)
+	parts := strings.SplitN(inner, ",", 2) //nolint:mnd
 
 	if len(parts) == 1 {
 		// Exact version: [1.0]

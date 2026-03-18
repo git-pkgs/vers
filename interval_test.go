@@ -4,10 +4,10 @@ import "testing"
 
 func TestNewInterval(t *testing.T) {
 	i := NewInterval("1.0.0", "2.0.0", true, false)
-	if i.Min != "1.0.0" {
+	if i.Min != "1.0.0" { //nolint:goconst
 		t.Errorf("Min = %q, want %q", i.Min, "1.0.0")
 	}
-	if i.Max != "2.0.0" {
+	if i.Max != "2.0.0" { //nolint:goconst
 		t.Errorf("Max = %q, want %q", i.Max, "2.0.0")
 	}
 	if !i.MinInclusive {
@@ -176,7 +176,7 @@ func TestIntervalIntersect(t *testing.T) {
 			NewInterval("1.0.0", "3.0.0", true, true),
 			NewInterval("2.0.0", "4.0.0", true, true),
 			func(r Interval) bool {
-				return r.Min == "2.0.0" && r.Max == "3.0.0" && r.MinInclusive && r.MaxInclusive
+				return r.Min == "2.0.0" && r.Max == "3.0.0" && r.MinInclusive && r.MaxInclusive //nolint:goconst
 			},
 		},
 		{
