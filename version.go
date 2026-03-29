@@ -17,7 +17,7 @@ var simpleNumericRegex = regexp.MustCompile(`^\d+$`)
 // versionCache caches parsed versions to avoid re-parsing the same strings.
 var versionCache = &boundedCache{
 	items: make(map[string]*VersionInfo),
-	max:   10000,
+	max:   10000, //nolint:mnd
 }
 
 type boundedCache struct {
@@ -58,77 +58,84 @@ func ParseVersion(s string) (*VersionInfo, error) {
 		return nil, fmt.Errorf("empty version string")
 	}
 
-	// Check cache first
 	if cached, ok := versionCache.Load(s); ok {
 		return cached, nil
 	}
 
+	v, err := parseVersionUncached(s)
+	if err != nil {
+		return nil, err
+	}
+	versionCache.Store(s, v)
+	return v, nil
+}
+
+func parseVersionUncached(s string) (*VersionInfo, error) {
 	v := &VersionInfo{Original: s}
 
-	// Handle simple numeric versions
 	if simpleNumericRegex.MatchString(s) {
-		major, _ := strconv.Atoi(s)
-		v.Major = major
-		versionCache.Store(s, v)
+		v.Major, _ = strconv.Atoi(s)
 		return v, nil
 	}
 
-	// Try semantic version parsing
 	if matches := SemanticVersionRegex.FindStringSubmatch(s); matches != nil {
-		if matches[1] != "" {
-			v.Major, _ = strconv.Atoi(matches[1])
-		}
-		if matches[2] != "" {
-			v.Minor, _ = strconv.Atoi(matches[2])
-		}
-		if matches[3] != "" {
-			v.Patch, _ = strconv.Atoi(matches[3])
-		}
-		v.Prerelease = matches[4]
-		v.Build = matches[5]
-		versionCache.Store(s, v)
-		return v, nil
+		return parseSemverMatches(v, matches), nil
 	}
 
-	// Handle dot-separated versions
 	if strings.Contains(s, ".") {
-		parts := strings.Split(s, ".")
-		if len(parts) >= 1 {
-			v.Major, _ = strconv.Atoi(parts[0])
-		}
-		if len(parts) >= 2 && !strings.Contains(parts[1], "-") {
-			v.Minor, _ = strconv.Atoi(parts[1])
-		}
-		if len(parts) >= 3 {
-			if strings.Contains(parts[2], "-") {
-				patchParts := strings.SplitN(parts[2], "-", 2)
-				v.Patch, _ = strconv.Atoi(patchParts[0])
-				if len(patchParts) > 1 {
-					v.Prerelease = patchParts[1]
-				}
-			} else {
-				v.Patch, _ = strconv.Atoi(parts[2])
-			}
-		}
-		if len(parts) > 3 && v.Prerelease == "" {
-			v.Prerelease = strings.Join(parts[3:], ".")
-		}
-		versionCache.Store(s, v)
-		return v, nil
+		return parseDotSeparated(v, s), nil
 	}
 
-	// Handle dash-separated versions
 	if strings.Contains(s, "-") {
-		parts := strings.SplitN(s, "-", 2)
+		parts := strings.SplitN(s, "-", 2) //nolint:mnd
 		v.Major, _ = strconv.Atoi(parts[0])
 		if len(parts) > 1 {
 			v.Prerelease = parts[1]
 		}
-		versionCache.Store(s, v)
 		return v, nil
 	}
 
 	return nil, fmt.Errorf("invalid version format: %s", s)
+}
+
+func parseSemverMatches(v *VersionInfo, matches []string) *VersionInfo {
+	if matches[1] != "" {
+		v.Major, _ = strconv.Atoi(matches[1])
+	}
+	if matches[2] != "" {
+		v.Minor, _ = strconv.Atoi(matches[2])
+	}
+	if matches[3] != "" {
+		v.Patch, _ = strconv.Atoi(matches[3])
+	}
+	v.Prerelease = matches[4]
+	v.Build = matches[5]
+	return v
+}
+
+func parseDotSeparated(v *VersionInfo, s string) *VersionInfo {
+	parts := strings.Split(s, ".")
+	if len(parts) >= 1 {
+		v.Major, _ = strconv.Atoi(parts[0])
+	}
+	if len(parts) >= 2 && !strings.Contains(parts[1], "-") { //nolint:mnd
+		v.Minor, _ = strconv.Atoi(parts[1])
+	}
+	if len(parts) >= 3 { //nolint:mnd
+		if strings.Contains(parts[2], "-") {
+			patchParts := strings.SplitN(parts[2], "-", 2) //nolint:mnd
+			v.Patch, _ = strconv.Atoi(patchParts[0])
+			if len(patchParts) > 1 {
+				v.Prerelease = patchParts[1]
+			}
+		} else {
+			v.Patch, _ = strconv.Atoi(parts[2])
+		}
+	}
+	if len(parts) > 3 && v.Prerelease == "" { //nolint:mnd
+		v.Prerelease = strings.Join(parts[3:], ".")
+	}
+	return v
 }
 
 // String returns the normalized version string.
@@ -266,7 +273,7 @@ func CompareWithScheme(a, b, scheme string) int {
 	}
 
 	switch scheme {
-	case "nuget":
+	case "nuget": //nolint:goconst
 		return compareNuGet(a, b)
 	case "maven":
 		return compareMaven(a, b)
@@ -424,140 +431,101 @@ func compareMaven(a, b string) int {
 }
 
 // compareMavenComponentsNew compares two Maven components with proper handling of sublist vs direct items.
-// Key Maven rules:
-// - Sublist (afterDash) vs direct numeric: sublist < numeric (list < int)
-// - Sublist vs direct string: sublist > string (list > string)
-// - Sublist vs null: depends on sublist's first element compared to null
-// - Direct vs null: positive numeric > null, zero = null, qualifier uses ordering
 func compareMavenComponentsNew(a, b mavenComponent) int {
-	// Both null
 	if a.isNull && b.isNull {
 		return 0
 	}
-
-	// One is null
 	if a.isNull {
-		return compareMavenToNull(b, true) * -1 // flip result since we're comparing null to b
+		return -compareMavenToNull(b)
 	}
 	if b.isNull {
-		return compareMavenToNull(a, false)
+		return compareMavenToNull(a)
 	}
 
-	// Check if they're at different "levels" (one is sublist, one is direct)
 	if a.afterDash != b.afterDash {
-		// Different levels
-		if a.afterDash {
-			// a is sublist item, b is direct item
-			if b.isNumeric {
-				return -1 // sublist < direct numeric (list < int)
-			}
-			return 1 // sublist > direct string (list > string)
-		}
-		// b is sublist item, a is direct item
-		if a.isNumeric {
-			return 1 // direct numeric > sublist (int > list)
-		}
-		return -1 // direct string < sublist (string < list)
+		return compareMavenDifferentLevels(a, b)
 	}
 
-	// Same level - compare values normally
-	// Both numeric
+	return compareMavenSameLevel(a, b)
+}
+
+func compareMavenDifferentLevels(a, b mavenComponent) int {
+	if a.afterDash {
+		if b.isNumeric {
+			return -1 // sublist < direct numeric
+		}
+		return 1 // sublist > direct string
+	}
+	if a.isNumeric {
+		return 1 // direct numeric > sublist
+	}
+	return -1 // direct string < sublist
+}
+
+func compareMavenSameLevel(a, b mavenComponent) int {
 	if a.isNumeric && b.isNumeric {
-		if a.numeric < b.numeric {
-			return -1
-		}
-		if a.numeric > b.numeric {
-			return 1
-		}
-		return 0
+		return cmpInt(a.numeric, b.numeric)
 	}
-
-	// Numeric vs qualifier (at same level)
-	if a.isNumeric && !b.isNumeric {
+	if a.isNumeric {
 		return 1 // numeric > any qualifier
 	}
-	if !a.isNumeric && b.isNumeric {
+	if b.isNumeric {
 		return -1 // qualifier < numeric
 	}
 
-	// Both qualifiers - use qualifier ordering
 	orderA, okA := getMavenQualifierOrder(a.qualifier)
 	orderB, okB := getMavenQualifierOrder(b.qualifier)
-
 	if orderA != orderB {
-		if orderA < orderB {
-			return -1
-		}
+		return cmpInt(orderA, orderB)
+	}
+	if !okA && !okB {
+		return cmpString(a.qualifier, b.qualifier)
+	}
+	return 0
+}
+
+func cmpInt(a, b int) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
 		return 1
 	}
+	return 0
+}
 
-	// Same order - if both unknown, compare alphabetically
-	if !okA && !okB {
-		if a.qualifier < b.qualifier {
-			return -1
-		}
-		if a.qualifier > b.qualifier {
-			return 1
-		}
+func cmpString(a, b string) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
 	}
 	return 0
 }
 
 // compareMavenToNull compares a component to null (missing component).
-// Returns the comparison result (component vs null).
-// In Maven:
-// - Numeric: positive > null, zero = null, negative < null
-// - Qualifier: uses qualifier ordering vs release ("")
-// - Sublist: depends on first element of the sublist
-func compareMavenToNull(comp mavenComponent, flip bool) int {
-	var result int
-
-	if comp.afterDash {
-		// Sublist vs null: compare first element to null
-		// A sublist [x] vs null → x.compareTo(null)
-		if comp.isNumeric {
-			if comp.numeric == 0 {
-				result = 0
-			} else if comp.numeric > 0 {
-				result = 1 // positive > null
-			} else {
-				result = -1
-			}
-		} else {
-			// Qualifier in sublist vs null
-			orderComp, _ := getMavenQualifierOrder(comp.qualifier)
-			orderNull := mavenQualifierOrder[""]
-			if orderComp < orderNull {
-				result = -1 // prerelease qualifiers < null
-			} else if orderComp > orderNull {
-				result = 1 // sp, unknown > null
-			} else {
-				result = 0
-			}
-		}
-	} else {
-		// Direct item vs null
-		if comp.isNumeric {
-			if comp.numeric == 0 {
-				result = 0 // zero = null
-			} else {
-				result = 1 // positive > null
-			}
-		} else {
-			// Direct qualifier vs null (release "")
-			orderComp, _ := getMavenQualifierOrder(comp.qualifier)
-			orderNull := mavenQualifierOrder[""]
-			if orderComp < orderNull {
-				result = -1
-			} else if orderComp > orderNull {
-				result = 1
-			} else {
-				result = 0
-			}
-		}
+func compareMavenToNull(comp mavenComponent) int {
+	if comp.isNumeric {
+		return compareMavenNumericToNull(comp)
 	}
+	return compareMavenQualifierToNull(comp.qualifier)
+}
 
-	return result
+func compareMavenNumericToNull(comp mavenComponent) int {
+	if comp.numeric == 0 {
+		return 0
+	}
+	if comp.afterDash && comp.numeric < 0 {
+		return -1
+	}
+	return 1
+}
+
+func compareMavenQualifierToNull(qualifier string) int {
+	orderComp, _ := getMavenQualifierOrder(qualifier)
+	orderNull := mavenQualifierOrder[""]
+	return cmpInt(orderComp, orderNull)
 }
 
 type mavenComponent struct {
@@ -570,6 +538,8 @@ type mavenComponent struct {
 
 // Maven qualifier ordering
 // Order: alpha < beta < milestone < rc < snapshot < "" (release) < sp < unknown < numbers
+//
+//nolint:mnd
 var mavenQualifierOrder = map[string]int{
 	"alpha":     1,
 	"beta":      2,
@@ -585,8 +555,7 @@ func getMavenQualifierOrder(q string) (int, bool) {
 	if ok {
 		return order, true
 	}
-	// Unknown qualifiers get order 8 (after sp, before numbers which get 9)
-	return 8, false
+	return 8, false //nolint:mnd
 }
 
 func parseMavenVersion(s string) []mavenComponent {

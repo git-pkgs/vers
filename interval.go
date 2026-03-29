@@ -114,43 +114,47 @@ func (i Interval) Intersect(other Interval) Interval {
 	result := Interval{}
 
 	// Determine new minimum
-	if i.Min != "" && other.Min != "" {
+	switch {
+	case i.Min != "" && other.Min != "":
 		cmp := CompareVersions(i.Min, other.Min)
-		if cmp > 0 {
+		switch {
+		case cmp > 0:
 			result.Min = i.Min
 			result.MinInclusive = i.MinInclusive
-		} else if cmp < 0 {
+		case cmp < 0:
 			result.Min = other.Min
 			result.MinInclusive = other.MinInclusive
-		} else {
+		default:
 			result.Min = i.Min
 			result.MinInclusive = i.MinInclusive && other.MinInclusive
 		}
-	} else if i.Min != "" {
+	case i.Min != "":
 		result.Min = i.Min
 		result.MinInclusive = i.MinInclusive
-	} else if other.Min != "" {
+	case other.Min != "":
 		result.Min = other.Min
 		result.MinInclusive = other.MinInclusive
 	}
 
 	// Determine new maximum
-	if i.Max != "" && other.Max != "" {
+	switch {
+	case i.Max != "" && other.Max != "":
 		cmp := CompareVersions(i.Max, other.Max)
-		if cmp < 0 {
+		switch {
+		case cmp < 0:
 			result.Max = i.Max
 			result.MaxInclusive = i.MaxInclusive
-		} else if cmp > 0 {
+		case cmp > 0:
 			result.Max = other.Max
 			result.MaxInclusive = other.MaxInclusive
-		} else {
+		default:
 			result.Max = i.Max
 			result.MaxInclusive = i.MaxInclusive && other.MaxInclusive
 		}
-	} else if i.Max != "" {
+	case i.Max != "":
 		result.Max = i.Max
 		result.MaxInclusive = i.MaxInclusive
-	} else if other.Max != "" {
+	case other.Max != "":
 		result.Max = other.Max
 		result.MaxInclusive = other.MaxInclusive
 	}
@@ -200,18 +204,18 @@ func (i Interval) Union(other Interval) *Interval {
 
 	// Determine new minimum (take the smaller one, "" means unbounded)
 	if i.Min == "" || other.Min == "" {
-		// Either side is unbounded below, so the union is too
 		result.Min = ""
 		result.MinInclusive = false
 	} else {
 		cmp := CompareVersions(i.Min, other.Min)
-		if cmp < 0 {
+		switch {
+		case cmp < 0:
 			result.Min = i.Min
 			result.MinInclusive = i.MinInclusive
-		} else if cmp > 0 {
+		case cmp > 0:
 			result.Min = other.Min
 			result.MinInclusive = other.MinInclusive
-		} else {
+		default:
 			result.Min = i.Min
 			result.MinInclusive = i.MinInclusive || other.MinInclusive
 		}
@@ -219,18 +223,18 @@ func (i Interval) Union(other Interval) *Interval {
 
 	// Determine new maximum (take the larger one, "" means unbounded)
 	if i.Max == "" || other.Max == "" {
-		// Either side is unbounded above, so the union is too
 		result.Max = ""
 		result.MaxInclusive = false
 	} else {
 		cmp := CompareVersions(i.Max, other.Max)
-		if cmp > 0 {
+		switch {
+		case cmp > 0:
 			result.Max = i.Max
 			result.MaxInclusive = i.MaxInclusive
-		} else if cmp < 0 {
+		case cmp < 0:
 			result.Max = other.Max
 			result.MaxInclusive = other.MaxInclusive
-		} else {
+		default:
 			result.Max = i.Max
 			result.MaxInclusive = i.MaxInclusive || other.MaxInclusive
 		}

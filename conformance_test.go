@@ -136,6 +136,7 @@ func TestConformance_Containment(t *testing.T) {
 	}
 }
 
+//nolint:gocognit
 func TestConformance_VersionComparison(t *testing.T) {
 	files := []string{
 		"nuget_version_cmp_test.json",
@@ -189,20 +190,19 @@ func TestConformance_VersionComparison(t *testing.T) {
 
 					t.Run("cmp_"+v1+"_"+v2, func(t *testing.T) {
 						cmp := CompareWithScheme(v1, v2, input.InputScheme)
-						// expected[0] should be less than expected[1]
-						// Use comparison to determine which version v1 matches (handles case normalization)
 						v1MatchesFirst := CompareWithScheme(v1, expected[0], input.InputScheme) == 0
-						if expected[0] == expected[1] || CompareWithScheme(expected[0], expected[1], input.InputScheme) == 0 {
+						versionsEqual := expected[0] == expected[1] || CompareWithScheme(expected[0], expected[1], input.InputScheme) == 0
+
+						switch {
+						case versionsEqual:
 							if cmp != 0 {
 								t.Errorf("CompareWithScheme(%q, %q, %q) = %d, want 0 (equal versions)", v1, v2, input.InputScheme, cmp)
 							}
-						} else if v1MatchesFirst {
-							// v1 matches the smaller version, so cmp(v1, v2) should be < 0
+						case v1MatchesFirst:
 							if cmp >= 0 {
 								t.Errorf("CompareWithScheme(%q, %q, %q) = %d, want < 0 (expected order: %v)", v1, v2, input.InputScheme, cmp, expected)
 							}
-						} else {
-							// v1 matches the larger version, so cmp(v1, v2) should be > 0
+						default:
 							if cmp <= 0 {
 								t.Errorf("CompareWithScheme(%q, %q, %q) = %d, want > 0 (expected order: %v)", v1, v2, input.InputScheme, cmp, expected)
 							}
