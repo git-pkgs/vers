@@ -509,6 +509,26 @@ func TestToVersString(t *testing.T) {
 	}
 }
 
+func TestToVersStringEncodesMetacharacters(t *testing.T) {
+	parser := NewParser()
+
+	// A version string containing a VERS separator should be percent-encoded
+	r := Exact("1.0|2.0")
+	got := parser.ToVersString(r, "deb")
+	if strings.Contains(got, "|2.0") && !strings.Contains(got, "%7C") {
+		t.Errorf("ToVersString should encode | in version, got %q", got)
+	}
+
+	// Roundtrip: parse the encoded output and check containment
+	parsed, err := parser.Parse(got)
+	if err != nil {
+		t.Fatalf("Parse(ToVersString()) failed: %v", err)
+	}
+	if !parsed.Contains("1.0|2.0") {
+		t.Error("roundtrip should preserve exact version with metacharacter")
+	}
+}
+
 func TestPublicAPISatisfies(t *testing.T) {
 	tests := []struct {
 		name       string

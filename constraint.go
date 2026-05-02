@@ -2,6 +2,7 @@ package vers
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -40,6 +41,9 @@ func parseConstraintWithScheme(s, scheme string) (*Constraint, error) {
 		if version == "" {
 			return nil, fmt.Errorf("invalid constraint format: %s", s)
 		}
+		if decoded, err := url.PathUnescape(version); err == nil {
+			version = decoded
+		}
 		if !preserveVPrefix {
 			version = stripVPrefix(version)
 		}
@@ -48,6 +52,9 @@ func parseConstraintWithScheme(s, scheme string) (*Constraint, error) {
 
 	// No operator found, treat as exact match
 	version := s
+	if decoded, err := url.PathUnescape(version); err == nil {
+		version = decoded
+	}
 	if !preserveVPrefix {
 		version = stripVPrefix(s)
 	}
