@@ -1,6 +1,9 @@
 package vers
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // Range represents a version range as a collection of intervals.
 // Multiple intervals represent a union (OR) of ranges.
@@ -198,24 +201,39 @@ func mergeIntervals(intervals []Interval) []Interval {
 		return intervals
 	}
 
-	// Simple implementation: try to merge each pair
-	result := make([]Interval, 0, len(intervals))
-
-	for _, interval := range intervals {
-		if interval.IsEmpty() {
-			continue
+	// Filter empty intervals and sort by lower bound
+	sorted := make([]Interval, 0, len(intervals))
+	for _, iv := range intervals {
+		if !iv.IsEmpty() {
+			sorted = append(sorted, iv)
 		}
+	}
+	if len(sorted) == 0 {
+		return nil
+	}
 
-		merged := false
-		for i, existing := range result {
-			if union := existing.Union(interval); union != nil {
-				result[i] = *union
-				merged = true
-				break
-			}
+	sort.Slice(sorted, func(i, j int) bool {
+		a, b := sorted[i], sorted[j]
+		if a.Min == "" && b.Min != "" {
+			return true // unbounded lower comes first
 		}
-		if !merged {
-			result = append(result, interval)
+		if a.Min != "" && b.Min == "" {
+			return false
+		}
+		cmp := CompareVersions(a.Min, b.Min)
+		if cmp != 0 {
+			return cmp < 0
+		}
+		return a.MinInclusive && !b.MinInclusive
+	})
+
+	result := []Interval{sorted[0]}
+	for _, iv := range sorted[1:] {
+		last := &result[len(result)-1]
+		if union := last.Union(iv); union != nil {
+			*last = *union
+		} else {
+			result = append(result, iv)
 		}
 	}
 

@@ -260,23 +260,30 @@ func (p *Parser) parseNpmRange(s string) (*Range, error) {
 		return Unbounded(), nil
 	}
 
-	// Handle || (OR)
+	// Handle || (OR) -- collect all parts, then merge once
 	if strings.Contains(s, "||") {
 		parts := strings.Split(s, "||")
-		var result *Range
+		var allIntervals []Interval
+		var allExclusions []string
+		var allRaw []Interval
 		for _, part := range parts {
-			// Each OR part may contain AND constraints, so recurse
 			r, err := p.parseNpmRange(strings.TrimSpace(part))
 			if err != nil {
 				return nil, err
 			}
-			if result == nil {
-				result = r
+			allIntervals = append(allIntervals, r.Intervals...)
+			allExclusions = append(allExclusions, r.Exclusions...)
+			if len(r.RawConstraints) > 0 {
+				allRaw = append(allRaw, r.RawConstraints...)
 			} else {
-				result = result.Union(r)
+				allRaw = append(allRaw, r.Intervals...)
 			}
 		}
-		return result, nil
+		return &Range{
+			Intervals:      mergeIntervals(allIntervals),
+			Exclusions:     allExclusions,
+			RawConstraints: allRaw,
+		}, nil
 	}
 
 	// Handle space-separated AND constraints
@@ -661,22 +668,27 @@ func (p *Parser) parseGoRange(s string) (*Range, error) {
 func (p *Parser) parseHexRange(s string) (*Range, error) {
 	s = strings.TrimSpace(s)
 
-	// Handle "or" disjunction first
+	// Handle "or" disjunction -- collect all parts, then merge once
 	if strings.Contains(s, " or ") {
 		parts := strings.Split(s, " or ")
-		var result *Range
+		var allIntervals []Interval
+		var allRaw []Interval
 		for _, part := range parts {
 			r, err := p.parseHexSingleRange(strings.TrimSpace(part))
 			if err != nil {
 				return nil, err
 			}
-			if result == nil {
-				result = r
+			allIntervals = append(allIntervals, r.Intervals...)
+			if len(r.RawConstraints) > 0 {
+				allRaw = append(allRaw, r.RawConstraints...)
 			} else {
-				result = result.Union(r)
+				allRaw = append(allRaw, r.Intervals...)
 			}
 		}
-		return result, nil
+		return &Range{
+			Intervals:      mergeIntervals(allIntervals),
+			RawConstraints: allRaw,
+		}, nil
 	}
 
 	return p.parseHexSingleRange(s)
