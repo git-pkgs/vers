@@ -1,6 +1,10 @@
 package vers
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func TestParseVersURI(t *testing.T) {
 	tests := []struct {
@@ -528,5 +532,24 @@ func TestPublicAPISatisfies(t *testing.T) {
 				t.Errorf("Satisfies() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNpmParseManyClauses(t *testing.T) {
+	// Build a constraint with many || parts. Before the fix, this was O(n^3)
+	// and would take seconds or minutes. Now it should complete quickly.
+	parts := make([]string, 500)
+	for i := range parts {
+		parts[i] = fmt.Sprintf(">=%d.0.0 <%d.0.0", i, i+1)
+	}
+	input := strings.Join(parts, " || ")
+
+	p := NewParser()
+	r, err := p.ParseNative(input, "npm")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if r == nil || r.IsEmpty() {
+		t.Error("expected non-empty range")
 	}
 }
