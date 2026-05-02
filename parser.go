@@ -83,7 +83,7 @@ func (p *Parser) ToVersString(r *Range, scheme string) string {
 		if interval.Min == interval.Max && interval.MinInclusive && interval.MaxInclusive && interval.Min != "" {
 			// Exact version - no operator needed per VERS spec
 			constraints = append(constraints, constraintWithVersion{
-				str:     normalizeVersion(interval.Min, scheme),
+				str:     encodeVersVersion(normalizeVersion(interval.Min, scheme)),
 				sortKey: interval.Min,
 			})
 		} else {
@@ -93,7 +93,7 @@ func (p *Parser) ToVersString(r *Range, scheme string) string {
 					op = ">="
 				}
 				constraints = append(constraints, constraintWithVersion{
-					str:     op + normalizeVersion(interval.Min, scheme),
+					str:     op + encodeVersVersion(normalizeVersion(interval.Min, scheme)),
 					sortKey: interval.Min,
 				})
 			}
@@ -103,7 +103,7 @@ func (p *Parser) ToVersString(r *Range, scheme string) string {
 					op = "<="
 				}
 				constraints = append(constraints, constraintWithVersion{
-					str:     op + normalizeVersion(interval.Max, scheme),
+					str:     op + encodeVersVersion(normalizeVersion(interval.Max, scheme)),
 					sortKey: interval.Max,
 				})
 			}
@@ -113,7 +113,7 @@ func (p *Parser) ToVersString(r *Range, scheme string) string {
 	// Add exclusions
 	for _, exc := range r.Exclusions {
 		constraints = append(constraints, constraintWithVersion{
-			str:     "!=" + normalizeVersion(exc, scheme),
+			str:     "!=" + encodeVersVersion(normalizeVersion(exc, scheme)),
 			sortKey: exc,
 		})
 	}
@@ -145,6 +145,21 @@ func sortConstraintsByVersion(constraints []constraintWithVersion) {
 			}
 		}
 	}
+}
+
+var versMetaEncoder = strings.NewReplacer(
+	"|", "%7C",
+	">", "%3E",
+	"<", "%3C",
+	"=", "%3D",
+	"!", "%21",
+	"/", "%2F",
+	"*", "%2A",
+	" ", "%20",
+)
+
+func encodeVersVersion(v string) string {
+	return versMetaEncoder.Replace(v)
 }
 
 // normalizeVersion normalizes a version string for output.
