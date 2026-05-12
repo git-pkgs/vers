@@ -77,6 +77,41 @@ func Compare(a, b string) int {
 	return CompareVersions(a, b)
 }
 
+// HighestSatisfying returns the highest version in versions that
+// satisfies constraint under the given scheme. Versions that fail to
+// parse are skipped. Returns ("", nil) when no version in the list
+// satisfies the constraint — a non-nil error is reserved for a
+// constraint that itself fails to parse.
+//
+// Common shape for package-manager resolvers: fetch the list of
+// available versions from the registry, then pick the highest one
+// that still satisfies the user's manifest constraint.
+//
+// If scheme is empty, constraint is parsed as a vers URI.
+func HighestSatisfying(versions []string, constraint, scheme string) (string, error) {
+	var r *Range
+	var err error
+	if scheme == "" {
+		r, err = Parse(constraint)
+	} else {
+		r, err = ParseNative(constraint, scheme)
+	}
+	if err != nil {
+		return "", err
+	}
+
+	var best string
+	for _, v := range versions {
+		if !r.Contains(v) {
+			continue
+		}
+		if best == "" || CompareWithScheme(v, best, scheme) > 0 {
+			best = v
+		}
+	}
+	return best, nil
+}
+
 // Valid checks if a version string is valid.
 func Valid(version string) bool {
 	_, err := ParseVersion(version)
