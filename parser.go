@@ -215,7 +215,7 @@ func (p *Parser) parseConstraints(constraintsStr, scheme string) (*Range, error)
 
 	// Collect all intervals - they form a union
 	// Then intersect overlapping intervals to form proper ranges
-	result := intersectConsecutiveIntervals(intervals)
+	result := intersectConsecutiveIntervals(intervals, scheme)
 
 	// If we only have exclusions and no other constraints, start with unbounded range
 	if result == nil {
@@ -226,19 +226,22 @@ func (p *Parser) parseConstraints(constraintsStr, scheme string) (*Range, error)
 		}
 	}
 	result.Exclusions = exclusions
+	result.Scheme = scheme
 	return result, nil
 }
 
 // intersectConsecutiveIntervals handles VERS constraint semantics:
 // - Consecutive unbounded intervals (like >=X followed by <Y) are intersected to form a range
 // - Bounded intervals (exact versions) are unioned
-func intersectConsecutiveIntervals(intervals []Interval) *Range {
+func intersectConsecutiveIntervals(intervals []Interval, scheme string) *Range {
 	if len(intervals) == 0 {
 		return nil
 	}
 	if len(intervals) == 1 {
 		return NewRange(intervals)
 	}
+
+	cmp := compareFuncFor(scheme)
 
 	var resultIntervals []Interval
 	i := 0
@@ -252,7 +255,7 @@ func intersectConsecutiveIntervals(intervals []Interval) *Range {
 			if (current.Min != "" && current.Max == "" && next.Max != "" && next.Min == "") ||
 				(current.Max != "" && current.Min == "" && next.Min != "" && next.Max == "") {
 				intersection := current.Intersect(next)
-				if !intersection.IsEmpty() {
+				if !intersection.isEmptyCmp(cmp) {
 					resultIntervals = append(resultIntervals, intersection)
 					i += 2
 					continue

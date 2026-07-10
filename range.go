@@ -12,6 +12,9 @@ type Range struct {
 	Exclusions []string // Versions to exclude (from != constraints)
 	// RawConstraints stores the original constraints for VERS output (not merged)
 	RawConstraints []Interval
+	// Scheme is the versioning scheme this range was parsed under.
+	// It selects the comparison rules used by Contains. Empty means generic.
+	Scheme string
 }
 
 // NewRange creates a new Range from intervals.
@@ -21,16 +24,18 @@ func NewRange(intervals []Interval) *Range {
 
 // Contains checks if the range contains the given version.
 func (r *Range) Contains(version string) bool {
+	cmp := compareFuncFor(r.Scheme)
+
 	// Check exclusions first
 	for _, exc := range r.Exclusions {
-		if CompareVersions(version, exc) == 0 {
+		if cmp(version, exc) == 0 {
 			return false
 		}
 	}
 
 	// Check if version is in any interval
 	for _, interval := range r.Intervals {
-		if interval.Contains(version) {
+		if interval.containsCmp(version, cmp) {
 			return true
 		}
 	}

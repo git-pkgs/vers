@@ -48,12 +48,16 @@ func LessThanInterval(version string, inclusive bool) Interval {
 
 // IsEmpty returns true if this interval matches no versions.
 func (i Interval) IsEmpty() bool {
+	return i.isEmptyCmp(CompareVersions)
+}
+
+func (i Interval) isEmptyCmp(cmp func(a, b string) int) bool {
 	if i.Min != "" && i.Max != "" {
-		cmp := CompareVersions(i.Min, i.Max)
-		if cmp > 0 {
+		c := cmp(i.Min, i.Max)
+		if c > 0 {
 			return true
 		}
-		if cmp == 0 && (!i.MinInclusive || !i.MaxInclusive) {
+		if c == 0 && (!i.MinInclusive || !i.MaxInclusive) {
 			return true
 		}
 	}
@@ -67,7 +71,11 @@ func (i Interval) IsUnbounded() bool {
 
 // Contains checks if the interval contains the given version.
 func (i Interval) Contains(version string) bool {
-	if i.IsEmpty() {
+	return i.containsCmp(version, CompareVersions)
+}
+
+func (i Interval) containsCmp(version string, cmp func(a, b string) int) bool {
+	if i.isEmptyCmp(cmp) {
 		return false
 	}
 	if i.IsUnbounded() {
@@ -76,13 +84,13 @@ func (i Interval) Contains(version string) bool {
 
 	// Check minimum bound
 	if i.Min != "" {
-		cmp := CompareVersions(version, i.Min)
+		c := cmp(version, i.Min)
 		if i.MinInclusive {
-			if cmp < 0 {
+			if c < 0 {
 				return false
 			}
 		} else {
-			if cmp <= 0 {
+			if c <= 0 {
 				return false
 			}
 		}
@@ -90,13 +98,13 @@ func (i Interval) Contains(version string) bool {
 
 	// Check maximum bound
 	if i.Max != "" {
-		cmp := CompareVersions(version, i.Max)
+		c := cmp(version, i.Max)
 		if i.MaxInclusive {
-			if cmp > 0 {
+			if c > 0 {
 				return false
 			}
 		} else {
-			if cmp >= 0 {
+			if c >= 0 {
 				return false
 			}
 		}
