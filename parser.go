@@ -308,7 +308,7 @@ func (p *Parser) parseNpmRange(s string) (*Range, error) {
 			}
 		}
 		return &Range{
-			Intervals:      mergeIntervals(allIntervals),
+			Intervals:      mergeIntervals(allIntervals, CompareVersions),
 			Exclusions:     allExclusions,
 			RawConstraints: allRaw,
 		}, nil
@@ -714,7 +714,7 @@ func (p *Parser) parseHexRange(s string) (*Range, error) {
 			}
 		}
 		return &Range{
-			Intervals:      mergeIntervals(allIntervals),
+			Intervals:      mergeIntervals(allIntervals, CompareVersions),
 			RawConstraints: allRaw,
 		}, nil
 	}

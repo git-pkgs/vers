@@ -2,7 +2,6 @@ package vers
 
 import (
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -30,22 +29,24 @@ var pep440PreTags = map[string]int{
 	"c": 2, "rc": 2, "pre": 2, "preview": 2,
 }
 
+// Numeric components in PEP 440 are unbounded non-negative integers, so
+// they are stored as digit strings and compared with cmpNumStr rather than
+// converted to int.
 type pep440Version struct {
-	epoch   int
-	release []int
+	epoch   string
+	release []string
 	hasPre  bool
 	preTag  int
-	preNum  int
+	preNum  string
 	hasPost bool
-	post    int
+	post    string
 	hasDev  bool
-	dev     int
+	dev     string
 	local   []pep440LocalPart
 }
 
 type pep440LocalPart struct {
-	num   int
-	str   string
+	s     string
 	isNum bool
 }
 
@@ -55,39 +56,32 @@ func parsePEP440(s string) (pep440Version, bool) {
 		return pep440Version{}, false
 	}
 
-	v := pep440Version{}
+	v := pep440Version{epoch: m[1]}
 
-	if m[1] != "" {
-		v.epoch, _ = strconv.Atoi(m[1])
-	}
-
-	for _, p := range strings.Split(m[2], ".") {
-		n, _ := strconv.Atoi(p)
-		v.release = append(v.release, n)
-	}
+	v.release = strings.Split(m[2], ".")
 	// Trim trailing zeros so 1.0 == 1.0.0
-	for len(v.release) > 1 && v.release[len(v.release)-1] == 0 {
+	for len(v.release) > 1 && cmpNumStr(v.release[len(v.release)-1], "0") == 0 {
 		v.release = v.release[:len(v.release)-1]
 	}
 
 	if m[3] != "" {
 		v.hasPre = true
 		v.preTag = pep440PreTags[strings.ToLower(m[3])]
-		v.preNum, _ = strconv.Atoi(m[4]) // "" -> 0, matches PEP 440 implicit 0
+		v.preNum = m[4]
 	}
 
 	if m[5] != "" || m[7] != "" {
 		v.hasPost = true
 		if m[7] != "" {
-			v.post, _ = strconv.Atoi(m[7])
+			v.post = m[7]
 		} else {
-			v.post, _ = strconv.Atoi(m[6])
+			v.post = m[6]
 		}
 	}
 
 	if m[8] != "" {
 		v.hasDev = true
-		v.dev, _ = strconv.Atoi(m[9])
+		v.dev = m[9]
 	}
 
 	if m[10] != "" {
@@ -103,13 +97,21 @@ func parsePEP440Local(s string) []pep440LocalPart {
 	})
 	parts := make([]pep440LocalPart, 0, len(raw))
 	for _, p := range raw {
-		if n, err := strconv.Atoi(p); err == nil {
-			parts = append(parts, pep440LocalPart{num: n, isNum: true})
-		} else {
-			parts = append(parts, pep440LocalPart{str: p})
-		}
+		parts = append(parts, pep440LocalPart{s: p, isNum: isDigits(p)})
 	}
 	return parts
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // comparePyPI compares two PEP 440 version strings.
@@ -121,10 +123,10 @@ func comparePyPI(a, b string) int {
 		return CompareVersions(a, b)
 	}
 
-	if c := cmpInt(va.epoch, vb.epoch); c != 0 {
+	if c := cmpNumStr(va.epoch, vb.epoch); c != 0 {
 		return c
 	}
-	if c := cmpIntSlice(va.release, vb.release); c != 0 {
+	if c := cmpNumStrSlice(va.release, vb.release); c != 0 {
 		return c
 	}
 	if c := cmpPEP440Pre(va, vb); c != 0 {
@@ -153,7 +155,7 @@ func cmpPEP440Pre(a, b pep440Version) int {
 	if c := cmpInt(a.preTag, b.preTag); c != 0 {
 		return c
 	}
-	return cmpInt(a.preNum, b.preNum)
+	return cmpNumStr(a.preNum, b.preNum)
 }
 
 func pep440PreRank(v pep440Version) int {
@@ -177,7 +179,7 @@ func cmpPEP440Post(a, b pep440Version) int {
 	if !a.hasPost {
 		return 0
 	}
-	return cmpInt(a.post, b.post)
+	return cmpNumStr(a.post, b.post)
 }
 
 // cmpPEP440Dev orders the dev-release slot. Absence sorts after presence.
@@ -191,23 +193,45 @@ func cmpPEP440Dev(a, b pep440Version) int {
 	if !a.hasDev {
 		return 0
 	}
-	return cmpInt(a.dev, b.dev)
+	return cmpNumStr(a.dev, b.dev)
 }
 
-func cmpIntSlice(a, b []int) int {
+// cmpNumStr compares two non-negative integer strings without converting
+// to a fixed-width type. Empty is treated as zero. Leading zeros are ignored.
+func cmpNumStr(a, b string) int {
+	a = trimLeadingZeros(a)
+	b = trimLeadingZeros(b)
+	if len(a) != len(b) {
+		return cmpInt(len(a), len(b))
+	}
+	return cmpString(a, b)
+}
+
+func trimLeadingZeros(s string) string {
+	if s == "" {
+		return "0"
+	}
+	i := 0
+	for i < len(s)-1 && s[i] == '0' {
+		i++
+	}
+	return s[i:]
+}
+
+func cmpNumStrSlice(a, b []string) int {
 	n := len(a)
 	if len(b) > n {
 		n = len(b)
 	}
 	for i := 0; i < n; i++ {
-		var x, y int
+		var x, y string
 		if i < len(a) {
 			x = a[i]
 		}
 		if i < len(b) {
 			y = b[i]
 		}
-		if c := cmpInt(x, y); c != 0 {
+		if c := cmpNumStr(x, y); c != 0 {
 			return c
 		}
 	}
@@ -245,11 +269,11 @@ func cmpPEP440Local(a, b []pep440LocalPart) int {
 			return -1
 		}
 		if pa.isNum {
-			if c := cmpInt(pa.num, pb.num); c != 0 {
+			if c := cmpNumStr(pa.s, pb.s); c != 0 {
 				return c
 			}
 		} else {
-			if c := cmpString(pa.str, pb.str); c != 0 {
+			if c := cmpString(pa.s, pb.s); c != 0 {
 				return c
 			}
 		}

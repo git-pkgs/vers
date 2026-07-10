@@ -331,6 +331,43 @@ func TestPyPISchemePropagation(t *testing.T) {
 	}
 }
 
+func TestPyPIRangeAlgebra(t *testing.T) {
+	a, _ := Parse("vers:pypi/>=1.0.dev1")
+	b, _ := Parse("vers:pypi/<1.0a1")
+
+	i := a.Intersect(b)
+	if i.IsEmpty() {
+		t.Errorf("Intersect(>=1.0.dev1, <1.0a1) is empty, want [1.0.dev1, 1.0a1)")
+	}
+	if !i.Contains("1.0.dev2") {
+		t.Errorf("Intersect(>=1.0.dev1, <1.0a1) should contain 1.0.dev2")
+	}
+	if i.Contains("1.0a1") {
+		t.Errorf("Intersect(>=1.0.dev1, <1.0a1) should not contain 1.0a1")
+	}
+
+	// Union of two intervals whose bounds only order correctly under PEP 440
+	// should merge into one.
+	c, _ := Parse("vers:pypi/>=1.0.dev1|<1.0a1")
+	d, _ := Parse("vers:pypi/>=1.0.dev5|<1.0b1")
+	u := c.Union(d)
+	if !u.Contains("1.0.dev2") || !u.Contains("1.0a5") || u.Contains("1.0b1") {
+		t.Errorf("Union of overlapping pypi intervals gave wrong containment: %v", u.Intervals)
+	}
+
+	// Intersect where both sides have a lower bound and PEP 440 disagrees
+	// with generic ordering on which is higher.
+	e, _ := Parse("vers:pypi/>=1.0.dev1|<2.0")
+	f, _ := Parse("vers:pypi/>=1.0a1|<2.0")
+	ef := e.Intersect(f)
+	if ef.Contains("1.0.dev5") {
+		t.Errorf("Intersect should have raised lower bound to 1.0a1")
+	}
+	if !ef.Contains("1.0a1") {
+		t.Errorf("Intersect should contain 1.0a1")
+	}
+}
+
 func TestPyPICompareLargeNumbers(t *testing.T) {
 	// Numeric components can exceed any fixed sentinel; presence of dev
 	// must still sort before absence regardless of magnitude.
@@ -342,6 +379,15 @@ func TestPyPICompareLargeNumbers(t *testing.T) {
 		{"1.0.dev2000000000", "1.0a1", -1},
 		{"1.0", "1.0.post2000000000", -1},
 		{"1.0a2000000000", "1.0", -1},
+		// Values that overflow int must still order distinctly.
+		{"1.0a888888888888888888888888", "1.0a999999999999999999999999", -1},
+		{"1.0.dev888888888888888888888888", "1.0.dev999999999999999999999999", -1},
+		{"1.0.post888888888888888888888888", "1.0.post999999999999999999999999", -1},
+		{"888888888888888888888888!1.0", "999999999999999999999999!1.0", -1},
+		{"1.888888888888888888888888", "1.999999999999999999999999", -1},
+		// Large local numeric segments stay numeric.
+		{"1.0+888888888888888888888888", "1.0+999999999999999999999999", -1},
+		{"1.0+abc", "1.0+888888888888888888888888", -1},
 	}
 	for _, tt := range tests {
 		if got := CompareWithScheme(tt.a, tt.b, "pypi"); got != tt.want {
