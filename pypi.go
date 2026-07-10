@@ -59,10 +59,6 @@ func parsePEP440(s string) (pep440Version, bool) {
 	v := pep440Version{epoch: m[1]}
 
 	v.release = strings.Split(m[2], ".")
-	// Trim trailing zeros so 1.0 == 1.0.0
-	for len(v.release) > 1 && cmpNumStr(v.release[len(v.release)-1], "0") == 0 {
-		v.release = v.release[:len(v.release)-1]
-	}
 
 	if m[3] != "" {
 		v.hasPre = true
@@ -89,6 +85,39 @@ func parsePEP440(s string) (pep440Version, bool) {
 	}
 
 	return v, true
+}
+
+// pep440CompatibleUpper returns the exclusive upper bound for a ~= clause.
+// ~= X.Y   -> < (X+1)
+// ~= X.Y.Z -> < X.(Y+1)
+// The bound is derived from release segments only and preserves the epoch.
+func pep440CompatibleUpper(version string) (string, bool) {
+	v, ok := parsePEP440(version)
+	if !ok || len(v.release) < 2 { //nolint:mnd
+		return "", false
+	}
+	head := make([]string, len(v.release)-1)
+	copy(head, v.release[:len(v.release)-1])
+	head[len(head)-1] = incNumStr(head[len(head)-1])
+	upper := strings.Join(head, ".")
+	if cmpNumStr(v.epoch, "0") != 0 {
+		upper = trimLeadingZeros(v.epoch) + "!" + upper
+	}
+	return upper, true
+}
+
+// incNumStr returns the decimal string s+1 for a non-negative integer string.
+func incNumStr(s string) string {
+	s = trimLeadingZeros(s)
+	b := []byte(s)
+	for i := len(b) - 1; i >= 0; i-- {
+		if b[i] < '9' {
+			b[i]++
+			return string(b)
+		}
+		b[i] = '0'
+	}
+	return "1" + string(b)
 }
 
 func parsePEP440Local(s string) []pep440LocalPart {

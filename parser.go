@@ -588,7 +588,7 @@ func (p *Parser) parsePypiRange(s string) (*Range, error) {
 	// Compatible release: ~=1.4.2
 	if strings.HasPrefix(s, "~=") {
 		version := strings.TrimSpace(s[2:])
-		return p.parsePessimisticRange(version)
+		return p.parsePypiCompatibleRelease(version)
 	}
 
 	// Comma-separated constraints
@@ -599,6 +599,19 @@ func (p *Parser) parsePypiRange(s string) (*Range, error) {
 	}
 
 	return p.parseConstraints(s, "pypi")
+}
+
+// parsePypiCompatibleRelease handles PEP 440 ~= by deriving the upper bound
+// from release segments (ignoring pre/post/dev) and preserving the epoch.
+func (p *Parser) parsePypiCompatibleRelease(version string) (*Range, error) {
+	upper, ok := pep440CompatibleUpper(version)
+	if !ok {
+		// Fall back to the generic pessimistic algorithm when the
+		// version is not valid PEP 440 or has fewer than two release
+		// segments.
+		return p.parsePessimisticRange(version)
+	}
+	return NewRange([]Interval{NewInterval(version, upper, true, false)}), nil
 }
 
 // maven: [1.0,2.0), (1.0,2.0], [1.0,)

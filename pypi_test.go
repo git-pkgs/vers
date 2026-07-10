@@ -396,6 +396,62 @@ func TestPyPICompareLargeNumbers(t *testing.T) {
 	}
 }
 
+func TestPyPICompatibleRelease(t *testing.T) {
+	// ~= counts release segments, not dots; pre/post/dev suffixes and
+	// epochs must not affect the derived upper bound.
+	tests := []struct {
+		constraint string
+		version    string
+		want       bool
+	}{
+		// ~=1.4.dev1 -> >=1.4.dev1, <2 (release is 1.4, two segments)
+		{"~=1.4.dev1", "1.4.dev1", true},
+		{"~=1.4.dev1", "1.9", true},
+		{"~=1.4.dev1", "2.0", false},
+		{"~=1.4.dev1", "1.3", false},
+		// ~=1.4.5 -> >=1.4.5, <1.5 (three release segments)
+		{"~=1.4.5", "1.4.6", true},
+		{"~=1.4.5", "1.5", false},
+		// ~=1.4.5.post1 -> >=1.4.5.post1, <1.5 (still three release segments)
+		{"~=1.4.5.post1", "1.4.9", true},
+		{"~=1.4.5.post1", "1.5", false},
+		// trailing-zero release segments still count
+		{"~=2.0.dev1", "2.5", true},
+		{"~=2.0.dev1", "3.0", false},
+		{"~=2.0.0", "2.0.9", true},
+		{"~=2.0.0", "2.1", false},
+		// epoch preserved in the upper bound
+		{"~=1!1.4.5", "1!1.4.6", true},
+		{"~=1!1.4.5", "1!1.5", false},
+		{"~=1!1.4.5", "1.4.6", false},
+	}
+	for _, tt := range tests {
+		got, err := Satisfies(tt.version, tt.constraint, "pypi")
+		if err != nil {
+			t.Errorf("Satisfies(%q, %q, pypi) error = %v", tt.version, tt.constraint, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("Satisfies(%q, %q, pypi) = %v, want %v", tt.version, tt.constraint, got, tt.want)
+		}
+	}
+}
+
+func TestPyPIUnionExclusionEquality(t *testing.T) {
+	a, _ := Parse("vers:pypi/>=1.0|!=1.5|<2.0")
+	b, _ := Parse("vers:pypi/>=1.0|!=1.5.0|<2.0")
+	u := a.Union(b)
+	if u.Contains("1.5") {
+		t.Errorf("union should still exclude 1.5 (both inputs exclude a version equal to it)")
+	}
+	if u.Contains("1.5.0") {
+		t.Errorf("union should still exclude 1.5.0")
+	}
+	if !u.Contains("1.6") {
+		t.Errorf("union should contain 1.6")
+	}
+}
+
 func TestPyPINativeRangeContains(t *testing.T) {
 	tests := []struct {
 		constraint string

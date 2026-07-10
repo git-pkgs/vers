@@ -84,14 +84,16 @@ func (r *Range) Union(other *Range) *Range {
 	allIntervals = append(allIntervals, r.Intervals...)
 	allIntervals = append(allIntervals, other.Intervals...)
 
+	cmp := compareFuncFor(r.Scheme)
+
 	// Merge overlapping intervals for containment checking
-	merged := mergeIntervals(allIntervals, compareFuncFor(r.Scheme))
+	merged := mergeIntervals(allIntervals, cmp)
 
 	// Combine exclusions (intersection of exclusions for union)
 	exclusions := make([]string, 0)
 	for _, e := range r.Exclusions {
 		for _, oe := range other.Exclusions {
-			if e == oe {
+			if cmp(e, oe) == 0 {
 				exclusions = append(exclusions, e)
 				break
 			}
