@@ -28,7 +28,9 @@ func (p *Parser) Parse(versURI string) (*Range, error) {
 
 	// Handle wildcard for unbounded range
 	if constraintsStr == "*" || constraintsStr == "" {
-		return Unbounded(), nil
+		r := Unbounded()
+		r.Scheme = scheme
+		return r, nil
 	}
 
 	return p.parseConstraints(constraintsStr, scheme)
@@ -36,6 +38,14 @@ func (p *Parser) Parse(versURI string) (*Range, error) {
 
 // ParseNative parses a native package manager version range into a Range.
 func (p *Parser) ParseNative(constraint string, scheme string) (*Range, error) {
+	r, err := p.parseNative(constraint, scheme)
+	if r != nil && r.Scheme == "" {
+		r.Scheme = scheme
+	}
+	return r, err
+}
+
+func (p *Parser) parseNative(constraint string, scheme string) (*Range, error) {
 	switch scheme {
 	case "npm":
 		return p.parseNpmRange(constraint)

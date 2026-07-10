@@ -23,11 +23,6 @@ var pep440Regex = regexp.MustCompile(`(?i)^\s*v?` +
 	`(?:\+([a-z0-9]+(?:[-_.][a-z0-9]+)*))?` + // 10: local
 	`\s*$`)
 
-const (
-	pep440NegInf = -1
-	pep440PosInf = 1 << 30 //nolint:mnd
-)
-
 //nolint:goconst,mnd
 var pep440PreTags = map[string]int{
 	"a": 0, "alpha": 0,
@@ -38,10 +33,13 @@ var pep440PreTags = map[string]int{
 type pep440Version struct {
 	epoch   int
 	release []int
-	preTag  int // pep440NegInf, pep440PosInf, or 0/1/2
+	hasPre  bool
+	preTag  int
 	preNum  int
-	post    int // pep440NegInf or post number
-	dev     int // pep440PosInf or dev number
+	hasPost bool
+	post    int
+	hasDev  bool
+	dev     int
 	local   []pep440LocalPart
 }
 
@@ -57,11 +55,7 @@ func parsePEP440(s string) (pep440Version, bool) {
 		return pep440Version{}, false
 	}
 
-	v := pep440Version{
-		preTag: pep440PosInf,
-		post:   pep440NegInf,
-		dev:    pep440PosInf,
-	}
+	v := pep440Version{}
 
 	if m[1] != "" {
 		v.epoch, _ = strconv.Atoi(m[1])
@@ -76,14 +70,14 @@ func parsePEP440(s string) (pep440Version, bool) {
 		v.release = v.release[:len(v.release)-1]
 	}
 
-	hasPre := m[3] != ""
-	if hasPre {
+	if m[3] != "" {
+		v.hasPre = true
 		v.preTag = pep440PreTags[strings.ToLower(m[3])]
 		v.preNum, _ = strconv.Atoi(m[4]) // "" -> 0, matches PEP 440 implicit 0
 	}
 
-	hasPost := m[5] != "" || m[7] != ""
-	if hasPost {
+	if m[5] != "" || m[7] != "" {
+		v.hasPost = true
 		if m[7] != "" {
 			v.post, _ = strconv.Atoi(m[7])
 		} else {
@@ -91,15 +85,9 @@ func parsePEP440(s string) (pep440Version, bool) {
 		}
 	}
 
-	hasDev := m[8] != ""
-	if hasDev {
+	if m[8] != "" {
+		v.hasDev = true
 		v.dev, _ = strconv.Atoi(m[9])
-	}
-
-	// PEP 440: a version with only .dev (no pre, no post) sorts before
-	// all pre-releases of the same release.
-	if !hasPre && !hasPost && hasDev {
-		v.preTag = pep440NegInf
 	}
 
 	if m[10] != "" {
@@ -139,19 +127,71 @@ func comparePyPI(a, b string) int {
 	if c := cmpIntSlice(va.release, vb.release); c != 0 {
 		return c
 	}
-	if c := cmpInt(va.preTag, vb.preTag); c != 0 {
+	if c := cmpPEP440Pre(va, vb); c != 0 {
 		return c
 	}
-	if c := cmpInt(va.preNum, vb.preNum); c != 0 {
+	if c := cmpPEP440Post(va, vb); c != 0 {
 		return c
 	}
-	if c := cmpInt(va.post, vb.post); c != 0 {
-		return c
-	}
-	if c := cmpInt(va.dev, vb.dev); c != 0 {
+	if c := cmpPEP440Dev(va, vb); c != 0 {
 		return c
 	}
 	return cmpPEP440Local(va.local, vb.local)
+}
+
+// cmpPEP440Pre orders the pre-release slot. A dev-only version (no pre, no
+// post) sorts before all pre-releases; a version with no pre otherwise sorts
+// after all pre-releases.
+func cmpPEP440Pre(a, b pep440Version) int {
+	ra, rb := pep440PreRank(a), pep440PreRank(b)
+	if ra != rb {
+		return cmpInt(ra, rb)
+	}
+	if !a.hasPre {
+		return 0
+	}
+	if c := cmpInt(a.preTag, b.preTag); c != 0 {
+		return c
+	}
+	return cmpInt(a.preNum, b.preNum)
+}
+
+func pep440PreRank(v pep440Version) int {
+	if !v.hasPre && !v.hasPost && v.hasDev {
+		return -1
+	}
+	if !v.hasPre {
+		return 1
+	}
+	return 0
+}
+
+// cmpPEP440Post orders the post-release slot. Absence sorts before presence.
+func cmpPEP440Post(a, b pep440Version) int {
+	if a.hasPost != b.hasPost {
+		if a.hasPost {
+			return 1
+		}
+		return -1
+	}
+	if !a.hasPost {
+		return 0
+	}
+	return cmpInt(a.post, b.post)
+}
+
+// cmpPEP440Dev orders the dev-release slot. Absence sorts after presence.
+func cmpPEP440Dev(a, b pep440Version) int {
+	if a.hasDev != b.hasDev {
+		if a.hasDev {
+			return -1
+		}
+		return 1
+	}
+	if !a.hasDev {
+		return 0
+	}
+	return cmpInt(a.dev, b.dev)
 }
 
 func cmpIntSlice(a, b []int) int {

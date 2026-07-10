@@ -48,8 +48,9 @@ func (r *Range) IsEmpty() bool {
 	if len(r.Intervals) == 0 {
 		return true
 	}
+	cmp := compareFuncFor(r.Scheme)
 	for _, interval := range r.Intervals {
-		if !interval.IsEmpty() {
+		if !interval.isEmptyCmp(cmp) {
 			return false
 		}
 	}
@@ -110,7 +111,7 @@ func (r *Range) Union(other *Range) *Range {
 		rawConstraints = append(rawConstraints, other.Intervals...)
 	}
 
-	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints}
+	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints, Scheme: r.Scheme}
 }
 
 // Intersect returns a new Range that is the intersection of this range and another.
@@ -129,7 +130,7 @@ func (r *Range) Intersect(other *Range) *Range {
 	}
 
 	if r.IsEmpty() || other.IsEmpty() {
-		return &Range{RawConstraints: rawConstraints}
+		return &Range{RawConstraints: rawConstraints, Scheme: r.Scheme}
 	}
 
 	// Intersect each pair of intervals
@@ -162,7 +163,7 @@ func (r *Range) Intersect(other *Range) *Range {
 		}
 	}
 
-	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints}
+	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints, Scheme: r.Scheme}
 }
 
 // Exclude returns a new Range that excludes the given version.
@@ -174,6 +175,7 @@ func (r *Range) Exclude(version string) *Range {
 	return &Range{
 		Intervals:  r.Intervals,
 		Exclusions: exclusions,
+		Scheme:     r.Scheme,
 	}
 }
 

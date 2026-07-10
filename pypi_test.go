@@ -276,6 +276,80 @@ func TestPyPIRangeContains(t *testing.T) {
 	}
 }
 
+func TestPyPIRangeIsEmpty(t *testing.T) {
+	// [1.0.dev1, 1.0a1) is non-empty under PEP 440 even though generic
+	// comparison would order dev1 > a1.
+	r, err := Parse("vers:pypi/>=1.0.dev1|<1.0a1")
+	if err != nil {
+		t.Fatalf("Parse error = %v", err)
+	}
+	if r.IsEmpty() {
+		t.Errorf("vers:pypi/>=1.0.dev1|<1.0a1 IsEmpty() = true, want false")
+	}
+	if !r.Contains("1.0.dev2") {
+		t.Errorf("vers:pypi/>=1.0.dev1|<1.0a1 should contain 1.0.dev2")
+	}
+	if got := defaultParser.ToVersString(r, "pypi"); got == "vers:pypi/" {
+		t.Errorf("ToVersString serialized non-empty range as %q", got)
+	}
+}
+
+func TestPyPISchemePropagation(t *testing.T) {
+	// ParseNative ~= path
+	ok, err := Satisfies("1.0a1", "~=1.0.dev1", "pypi")
+	if err != nil {
+		t.Fatalf("Satisfies error = %v", err)
+	}
+	if !ok {
+		t.Errorf("Satisfies(1.0a1, ~=1.0.dev1, pypi) = false, want true")
+	}
+
+	// Wildcard
+	r, _ := Parse("vers:pypi/*")
+	if r.Scheme != "pypi" {
+		t.Errorf("Parse(vers:pypi/*).Scheme = %q, want pypi", r.Scheme)
+	}
+
+	// Exclude preserves scheme
+	r, _ = Parse("vers:pypi/>=1.0")
+	r2 := r.Exclude("1.5")
+	if r2.Scheme != "pypi" {
+		t.Errorf("Exclude dropped scheme: got %q", r2.Scheme)
+	}
+	if r2.Contains("1.5.0") {
+		t.Errorf("excluded 1.5 should also exclude 1.5.0 under PEP 440 equality")
+	}
+
+	// Union and Intersect preserve scheme
+	a, _ := Parse("vers:pypi/>=1.0|<2.0")
+	b, _ := Parse("vers:pypi/>=1.5|<3.0")
+	if u := a.Union(b); u.Scheme != "pypi" {
+		t.Errorf("Union dropped scheme: got %q", u.Scheme)
+	}
+	if i := a.Intersect(b); i.Scheme != "pypi" {
+		t.Errorf("Intersect dropped scheme: got %q", i.Scheme)
+	}
+}
+
+func TestPyPICompareLargeNumbers(t *testing.T) {
+	// Numeric components can exceed any fixed sentinel; presence of dev
+	// must still sort before absence regardless of magnitude.
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"1.0a1.dev2000000000", "1.0a1", -1},
+		{"1.0.dev2000000000", "1.0a1", -1},
+		{"1.0", "1.0.post2000000000", -1},
+		{"1.0a2000000000", "1.0", -1},
+	}
+	for _, tt := range tests {
+		if got := CompareWithScheme(tt.a, tt.b, "pypi"); got != tt.want {
+			t.Errorf("CompareWithScheme(%q, %q, pypi) = %d, want %d", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
+
 func TestPyPINativeRangeContains(t *testing.T) {
 	tests := []struct {
 		constraint string
