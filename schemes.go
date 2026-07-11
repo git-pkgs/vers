@@ -232,7 +232,7 @@ func debianCharOrder(c byte) int {
 	case isASCIIAlpha(c):
 		return int(c)
 	default:
-		return int(c) + 256
+		return int(c) + 256 //nolint:mnd // Debian orders non-letters above the ASCII letter range.
 	}
 }
 
