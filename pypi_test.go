@@ -434,6 +434,10 @@ func TestPyPICompatibleRelease(t *testing.T) {
 		{"~=1.4, !=1.4.5, <1.4.8", "1.4.6", true},
 		{"~=1.4, !=1.4.5, <1.4.8", "1.4.5", false},
 		{"~=1.4, !=1.4.5, <1.4.8", "1.4.9", false},
+		// Leading ~= must intersect under pypi rules regardless of order.
+		{"~=1.0.dev1,<1.0a1", "1.0.dev2", true},
+		{"~=1.0.dev1,<1.0a1", "1.0a1", false},
+		{"<1.0a1,~=1.0.dev1", "1.0.dev2", true},
 	}
 	for _, tt := range tests {
 		got, err := Satisfies(tt.version, tt.constraint, "pypi")

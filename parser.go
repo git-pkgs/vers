@@ -51,7 +51,7 @@ func (p *Parser) parseNative(constraint string, scheme string) (*Range, error) {
 		return p.parseNpmRange(constraint)
 	case "gem", "rubygems":
 		return p.parseGemRange(constraint)
-	case "pypi":
+	case "pypi": //nolint:goconst
 		return p.parsePypiRange(constraint)
 	case "maven":
 		return p.parseMavenRange(constraint)
@@ -615,13 +615,21 @@ func (p *Parser) parsePypiRange(s string) (*Range, error) {
 // from release segments (ignoring pre/post/dev) and preserving the epoch.
 func (p *Parser) parsePypiCompatibleRelease(version string) (*Range, error) {
 	upper, ok := pep440CompatibleUpper(version)
-	if !ok {
+	var r *Range
+	if ok {
+		r = NewRange([]Interval{NewInterval(version, upper, true, false)})
+	} else {
 		// Fall back to the generic pessimistic algorithm when the
 		// version is not valid PEP 440 or has fewer than two release
 		// segments.
-		return p.parsePessimisticRange(version)
+		var err error
+		r, err = p.parsePessimisticRange(version)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return NewRange([]Interval{NewInterval(version, upper, true, false)}), nil
+	r.Scheme = "pypi" //nolint:goconst
+	return r, nil
 }
 
 // maven: [1.0,2.0), (1.0,2.0], [1.0,)

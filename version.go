@@ -304,7 +304,7 @@ func compareFuncFor(scheme string) func(a, b string) int {
 		return compareNuGet
 	case "maven":
 		return compareMaven
-	case "pypi":
+	case "pypi": //nolint:goconst
 		return comparePyPI
 	default:
 		return CompareVersions
