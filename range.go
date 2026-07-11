@@ -12,6 +12,9 @@ type Range struct {
 	Exclusions []string // Versions to exclude (from != constraints)
 	// RawConstraints stores the original constraints for VERS output (not merged)
 	RawConstraints []Interval
+	// Scheme is the versioning scheme this range was parsed under.
+	// It selects the comparison rules used by Contains. Empty means generic.
+	Scheme string
 }
 
 // NewRange creates a new Range from intervals.
@@ -21,16 +24,18 @@ func NewRange(intervals []Interval) *Range {
 
 // Contains checks if the range contains the given version.
 func (r *Range) Contains(version string) bool {
+	cmp := compareFuncFor(r.Scheme)
+
 	// Check exclusions first
 	for _, exc := range r.Exclusions {
-		if CompareVersions(version, exc) == 0 {
+		if cmp(version, exc) == 0 {
 			return false
 		}
 	}
 
 	// Check if version is in any interval
 	for _, interval := range r.Intervals {
-		if interval.Contains(version) {
+		if interval.containsCmp(version, cmp) {
 			return true
 		}
 	}
@@ -43,8 +48,9 @@ func (r *Range) IsEmpty() bool {
 	if len(r.Intervals) == 0 {
 		return true
 	}
+	cmp := compareFuncFor(r.Scheme)
 	for _, interval := range r.Intervals {
-		if !interval.IsEmpty() {
+		if !interval.isEmptyCmp(cmp) {
 			return false
 		}
 	}
@@ -78,14 +84,16 @@ func (r *Range) Union(other *Range) *Range {
 	allIntervals = append(allIntervals, r.Intervals...)
 	allIntervals = append(allIntervals, other.Intervals...)
 
+	cmp := compareFuncFor(r.Scheme)
+
 	// Merge overlapping intervals for containment checking
-	merged := mergeIntervals(allIntervals)
+	merged := mergeIntervals(allIntervals, cmp)
 
 	// Combine exclusions (intersection of exclusions for union)
 	exclusions := make([]string, 0)
 	for _, e := range r.Exclusions {
 		for _, oe := range other.Exclusions {
-			if e == oe {
+			if cmp(e, oe) == 0 {
 				exclusions = append(exclusions, e)
 				break
 			}
@@ -105,7 +113,7 @@ func (r *Range) Union(other *Range) *Range {
 		rawConstraints = append(rawConstraints, other.Intervals...)
 	}
 
-	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints}
+	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints, Scheme: r.Scheme}
 }
 
 // Intersect returns a new Range that is the intersection of this range and another.
@@ -124,22 +132,24 @@ func (r *Range) Intersect(other *Range) *Range {
 	}
 
 	if r.IsEmpty() || other.IsEmpty() {
-		return &Range{RawConstraints: rawConstraints}
+		return &Range{RawConstraints: rawConstraints, Scheme: r.Scheme}
 	}
+
+	cmp := compareFuncFor(r.Scheme)
 
 	// Intersect each pair of intervals
 	var result []Interval
 	for _, i1 := range r.Intervals {
 		for _, i2 := range other.Intervals {
-			intersection := i1.Intersect(i2)
-			if !intersection.IsEmpty() {
+			intersection := i1.intersectCmp(i2, cmp)
+			if !intersection.isEmptyCmp(cmp) {
 				result = append(result, intersection)
 			}
 		}
 	}
 
 	// Merge overlapping intervals
-	merged := mergeIntervals(result)
+	merged := mergeIntervals(result, cmp)
 
 	// Combine exclusions (union of exclusions for intersection)
 	exclusions := make([]string, 0, len(r.Exclusions)+len(other.Exclusions))
@@ -157,7 +167,7 @@ func (r *Range) Intersect(other *Range) *Range {
 		}
 	}
 
-	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints}
+	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints, Scheme: r.Scheme}
 }
 
 // Exclude returns a new Range that excludes the given version.
@@ -169,6 +179,7 @@ func (r *Range) Exclude(version string) *Range {
 	return &Range{
 		Intervals:  r.Intervals,
 		Exclusions: exclusions,
+		Scheme:     r.Scheme,
 	}
 }
 
@@ -196,7 +207,7 @@ func (r *Range) String() string {
 }
 
 // mergeIntervals merges overlapping intervals into a minimal set.
-func mergeIntervals(intervals []Interval) []Interval {
+func mergeIntervals(intervals []Interval, cmp func(a, b string) int) []Interval {
 	if len(intervals) <= 1 {
 		return intervals
 	}
@@ -204,7 +215,7 @@ func mergeIntervals(intervals []Interval) []Interval {
 	// Filter empty intervals and sort by lower bound
 	sorted := make([]Interval, 0, len(intervals))
 	for _, iv := range intervals {
-		if !iv.IsEmpty() {
+		if !iv.isEmptyCmp(cmp) {
 			sorted = append(sorted, iv)
 		}
 	}
@@ -220,9 +231,9 @@ func mergeIntervals(intervals []Interval) []Interval {
 		if a.Min != "" && b.Min == "" {
 			return false
 		}
-		cmp := CompareVersions(a.Min, b.Min)
-		if cmp != 0 {
-			return cmp < 0
+		c := cmp(a.Min, b.Min)
+		if c != 0 {
+			return c < 0
 		}
 		return a.MinInclusive && !b.MinInclusive
 	})
@@ -230,7 +241,7 @@ func mergeIntervals(intervals []Interval) []Interval {
 	result := []Interval{sorted[0]}
 	for _, iv := range sorted[1:] {
 		last := &result[len(result)-1]
-		if union := last.Union(iv); union != nil {
+		if union := last.unionCmp(iv, cmp); union != nil {
 			*last = *union
 		} else {
 			result = append(result, iv)

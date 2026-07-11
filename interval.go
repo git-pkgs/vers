@@ -48,12 +48,16 @@ func LessThanInterval(version string, inclusive bool) Interval {
 
 // IsEmpty returns true if this interval matches no versions.
 func (i Interval) IsEmpty() bool {
+	return i.isEmptyCmp(CompareVersions)
+}
+
+func (i Interval) isEmptyCmp(cmp func(a, b string) int) bool {
 	if i.Min != "" && i.Max != "" {
-		cmp := CompareVersions(i.Min, i.Max)
-		if cmp > 0 {
+		c := cmp(i.Min, i.Max)
+		if c > 0 {
 			return true
 		}
-		if cmp == 0 && (!i.MinInclusive || !i.MaxInclusive) {
+		if c == 0 && (!i.MinInclusive || !i.MaxInclusive) {
 			return true
 		}
 	}
@@ -67,7 +71,11 @@ func (i Interval) IsUnbounded() bool {
 
 // Contains checks if the interval contains the given version.
 func (i Interval) Contains(version string) bool {
-	if i.IsEmpty() {
+	return i.containsCmp(version, CompareVersions)
+}
+
+func (i Interval) containsCmp(version string, cmp func(a, b string) int) bool {
+	if i.isEmptyCmp(cmp) {
 		return false
 	}
 	if i.IsUnbounded() {
@@ -76,13 +84,13 @@ func (i Interval) Contains(version string) bool {
 
 	// Check minimum bound
 	if i.Min != "" {
-		cmp := CompareVersions(version, i.Min)
+		c := cmp(version, i.Min)
 		if i.MinInclusive {
-			if cmp < 0 {
+			if c < 0 {
 				return false
 			}
 		} else {
-			if cmp <= 0 {
+			if c <= 0 {
 				return false
 			}
 		}
@@ -90,13 +98,13 @@ func (i Interval) Contains(version string) bool {
 
 	// Check maximum bound
 	if i.Max != "" {
-		cmp := CompareVersions(version, i.Max)
+		c := cmp(version, i.Max)
 		if i.MaxInclusive {
-			if cmp > 0 {
+			if c > 0 {
 				return false
 			}
 		} else {
-			if cmp >= 0 {
+			if c >= 0 {
 				return false
 			}
 		}
@@ -107,7 +115,11 @@ func (i Interval) Contains(version string) bool {
 
 // Intersect returns the intersection of two intervals.
 func (i Interval) Intersect(other Interval) Interval {
-	if i.IsEmpty() || other.IsEmpty() {
+	return i.intersectCmp(other, CompareVersions)
+}
+
+func (i Interval) intersectCmp(other Interval, cmp func(a, b string) int) Interval {
+	if i.isEmptyCmp(cmp) || other.isEmptyCmp(cmp) {
 		return EmptyInterval()
 	}
 
@@ -116,12 +128,12 @@ func (i Interval) Intersect(other Interval) Interval {
 	// Determine new minimum
 	switch {
 	case i.Min != "" && other.Min != "":
-		cmp := CompareVersions(i.Min, other.Min)
+		c := cmp(i.Min, other.Min)
 		switch {
-		case cmp > 0:
+		case c > 0:
 			result.Min = i.Min
 			result.MinInclusive = i.MinInclusive
-		case cmp < 0:
+		case c < 0:
 			result.Min = other.Min
 			result.MinInclusive = other.MinInclusive
 		default:
@@ -139,12 +151,12 @@ func (i Interval) Intersect(other Interval) Interval {
 	// Determine new maximum
 	switch {
 	case i.Max != "" && other.Max != "":
-		cmp := CompareVersions(i.Max, other.Max)
+		c := cmp(i.Max, other.Max)
 		switch {
-		case cmp < 0:
+		case c < 0:
 			result.Max = i.Max
 			result.MaxInclusive = i.MaxInclusive
-		case cmp > 0:
+		case c > 0:
 			result.Max = other.Max
 			result.MaxInclusive = other.MaxInclusive
 		default:
@@ -164,23 +176,31 @@ func (i Interval) Intersect(other Interval) Interval {
 
 // Overlaps returns true if the two intervals overlap.
 func (i Interval) Overlaps(other Interval) bool {
-	if i.IsEmpty() || other.IsEmpty() {
+	return i.overlapsCmp(other, CompareVersions)
+}
+
+func (i Interval) overlapsCmp(other Interval, cmp func(a, b string) int) bool {
+	if i.isEmptyCmp(cmp) || other.isEmptyCmp(cmp) {
 		return false
 	}
-	return !i.Intersect(other).IsEmpty()
+	return !i.intersectCmp(other, cmp).isEmptyCmp(cmp)
 }
 
 // Adjacent returns true if the two intervals are adjacent (can be merged).
 func (i Interval) Adjacent(other Interval) bool {
-	if i.IsEmpty() || other.IsEmpty() {
+	return i.adjacentCmp(other, CompareVersions)
+}
+
+func (i Interval) adjacentCmp(other Interval, cmp func(a, b string) int) bool {
+	if i.isEmptyCmp(cmp) || other.isEmptyCmp(cmp) {
 		return false
 	}
 
-	if i.Max != "" && other.Min != "" && CompareVersions(i.Max, other.Min) == 0 {
+	if i.Max != "" && other.Min != "" && cmp(i.Max, other.Min) == 0 {
 		return (i.MaxInclusive && !other.MinInclusive) || (!i.MaxInclusive && other.MinInclusive)
 	}
 
-	if i.Min != "" && other.Max != "" && CompareVersions(i.Min, other.Max) == 0 {
+	if i.Min != "" && other.Max != "" && cmp(i.Min, other.Max) == 0 {
 		return (i.MinInclusive && !other.MaxInclusive) || (!i.MinInclusive && other.MaxInclusive)
 	}
 
@@ -189,14 +209,18 @@ func (i Interval) Adjacent(other Interval) bool {
 
 // Union returns the union of two intervals, or nil if they cannot be merged.
 func (i Interval) Union(other Interval) *Interval {
-	if i.IsEmpty() {
+	return i.unionCmp(other, CompareVersions)
+}
+
+func (i Interval) unionCmp(other Interval, cmp func(a, b string) int) *Interval {
+	if i.isEmptyCmp(cmp) {
 		return &other
 	}
-	if other.IsEmpty() {
+	if other.isEmptyCmp(cmp) {
 		return &i
 	}
 
-	if !i.Overlaps(other) && !i.Adjacent(other) {
+	if !i.overlapsCmp(other, cmp) && !i.adjacentCmp(other, cmp) {
 		return nil
 	}
 
@@ -207,12 +231,12 @@ func (i Interval) Union(other Interval) *Interval {
 		result.Min = ""
 		result.MinInclusive = false
 	} else {
-		cmp := CompareVersions(i.Min, other.Min)
+		c := cmp(i.Min, other.Min)
 		switch {
-		case cmp < 0:
+		case c < 0:
 			result.Min = i.Min
 			result.MinInclusive = i.MinInclusive
-		case cmp > 0:
+		case c > 0:
 			result.Min = other.Min
 			result.MinInclusive = other.MinInclusive
 		default:
@@ -226,12 +250,12 @@ func (i Interval) Union(other Interval) *Interval {
 		result.Max = ""
 		result.MaxInclusive = false
 	} else {
-		cmp := CompareVersions(i.Max, other.Max)
+		c := cmp(i.Max, other.Max)
 		switch {
-		case cmp > 0:
+		case c > 0:
 			result.Max = i.Max
 			result.MaxInclusive = i.MaxInclusive
-		case cmp < 0:
+		case c < 0:
 			result.Max = other.Max
 			result.MaxInclusive = other.MaxInclusive
 		default:

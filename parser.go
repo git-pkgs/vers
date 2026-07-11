@@ -28,7 +28,9 @@ func (p *Parser) Parse(versURI string) (*Range, error) {
 
 	// Handle wildcard for unbounded range
 	if constraintsStr == "*" || constraintsStr == "" {
-		return Unbounded(), nil
+		r := Unbounded()
+		r.Scheme = scheme
+		return r, nil
 	}
 
 	return p.parseConstraints(constraintsStr, scheme)
@@ -36,12 +38,20 @@ func (p *Parser) Parse(versURI string) (*Range, error) {
 
 // ParseNative parses a native package manager version range into a Range.
 func (p *Parser) ParseNative(constraint string, scheme string) (*Range, error) {
+	r, err := p.parseNative(constraint, scheme)
+	if r != nil && r.Scheme == "" {
+		r.Scheme = scheme
+	}
+	return r, err
+}
+
+func (p *Parser) parseNative(constraint string, scheme string) (*Range, error) {
 	switch scheme {
 	case "npm":
 		return p.parseNpmRange(constraint)
 	case "gem", "rubygems":
 		return p.parseGemRange(constraint)
-	case "pypi":
+	case "pypi": //nolint:goconst
 		return p.parsePypiRange(constraint)
 	case "maven":
 		return p.parseMavenRange(constraint)
@@ -215,7 +225,7 @@ func (p *Parser) parseConstraints(constraintsStr, scheme string) (*Range, error)
 
 	// Collect all intervals - they form a union
 	// Then intersect overlapping intervals to form proper ranges
-	result := intersectConsecutiveIntervals(intervals)
+	result := intersectConsecutiveIntervals(intervals, scheme)
 
 	// If we only have exclusions and no other constraints, start with unbounded range
 	if result == nil {
@@ -226,19 +236,22 @@ func (p *Parser) parseConstraints(constraintsStr, scheme string) (*Range, error)
 		}
 	}
 	result.Exclusions = exclusions
+	result.Scheme = scheme
 	return result, nil
 }
 
 // intersectConsecutiveIntervals handles VERS constraint semantics:
 // - Consecutive unbounded intervals (like >=X followed by <Y) are intersected to form a range
 // - Bounded intervals (exact versions) are unioned
-func intersectConsecutiveIntervals(intervals []Interval) *Range {
+func intersectConsecutiveIntervals(intervals []Interval, scheme string) *Range {
 	if len(intervals) == 0 {
 		return nil
 	}
 	if len(intervals) == 1 {
 		return NewRange(intervals)
 	}
+
+	cmp := compareFuncFor(scheme)
 
 	var resultIntervals []Interval
 	i := 0
@@ -252,7 +265,7 @@ func intersectConsecutiveIntervals(intervals []Interval) *Range {
 			if (current.Min != "" && current.Max == "" && next.Max != "" && next.Min == "") ||
 				(current.Max != "" && current.Min == "" && next.Min != "" && next.Max == "") {
 				intersection := current.Intersect(next)
-				if !intersection.IsEmpty() {
+				if !intersection.isEmptyCmp(cmp) {
 					resultIntervals = append(resultIntervals, intersection)
 					i += 2
 					continue
@@ -295,7 +308,7 @@ func (p *Parser) parseNpmRange(s string) (*Range, error) {
 			}
 		}
 		return &Range{
-			Intervals:      mergeIntervals(allIntervals),
+			Intervals:      mergeIntervals(allIntervals, CompareVersions),
 			Exclusions:     allExclusions,
 			RawConstraints: allRaw,
 		}, nil
@@ -572,20 +585,51 @@ func (p *Parser) parsePessimisticRange(version string) (*Range, error) {
 func (p *Parser) parsePypiRange(s string) (*Range, error) {
 	s = strings.TrimSpace(s)
 
+	// Comma is AND in PEP 440: parse each specifier and intersect.
+	if strings.Contains(s, ",") {
+		var result *Range
+		for _, part := range strings.Split(s, ",") {
+			r, err := p.parsePypiRange(part)
+			if err != nil {
+				return nil, err
+			}
+			if result == nil {
+				result = r
+			} else {
+				result = result.Intersect(r)
+			}
+		}
+		return result, nil
+	}
+
 	// Compatible release: ~=1.4.2
 	if strings.HasPrefix(s, "~=") {
 		version := strings.TrimSpace(s[2:])
-		return p.parsePessimisticRange(version)
-	}
-
-	// Comma-separated constraints
-	if strings.Contains(s, ",") {
-		parts := strings.Split(s, ",")
-		constraintStr := strings.Join(parts, "|")
-		return p.parseConstraints(constraintStr, "pypi")
+		return p.parsePypiCompatibleRelease(version)
 	}
 
 	return p.parseConstraints(s, "pypi")
+}
+
+// parsePypiCompatibleRelease handles PEP 440 ~= by deriving the upper bound
+// from release segments (ignoring pre/post/dev) and preserving the epoch.
+func (p *Parser) parsePypiCompatibleRelease(version string) (*Range, error) {
+	upper, ok := pep440CompatibleUpper(version)
+	var r *Range
+	if ok {
+		r = NewRange([]Interval{NewInterval(version, upper, true, false)})
+	} else {
+		// Fall back to the generic pessimistic algorithm when the
+		// version is not valid PEP 440 or has fewer than two release
+		// segments.
+		var err error
+		r, err = p.parsePessimisticRange(version)
+		if err != nil {
+			return nil, err
+		}
+	}
+	r.Scheme = "pypi" //nolint:goconst
+	return r, nil
 }
 
 // maven: [1.0,2.0), (1.0,2.0], [1.0,)
@@ -701,7 +745,7 @@ func (p *Parser) parseHexRange(s string) (*Range, error) {
 			}
 		}
 		return &Range{
-			Intervals:      mergeIntervals(allIntervals),
+			Intervals:      mergeIntervals(allIntervals, CompareVersions),
 			RawConstraints: allRaw,
 		}, nil
 	}

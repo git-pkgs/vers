@@ -119,9 +119,9 @@ func parseDotSeparated(v *VersionInfo, s string) *VersionInfo {
 		v.Major, _ = strconv.Atoi(parts[0])
 	}
 	if len(parts) >= 2 && !strings.Contains(parts[1], "-") { //nolint:mnd
-		v.Minor, _ = strconv.Atoi(parts[1])
+		v.Minor, v.Prerelease = splitAlphaSuffix(parts[1])
 	}
-	if len(parts) >= 3 { //nolint:mnd
+	if len(parts) >= 3 && v.Prerelease == "" { //nolint:mnd
 		if strings.Contains(parts[2], "-") {
 			patchParts := strings.SplitN(parts[2], "-", 2) //nolint:mnd
 			v.Patch, _ = strconv.Atoi(patchParts[0])
@@ -129,13 +129,35 @@ func parseDotSeparated(v *VersionInfo, s string) *VersionInfo {
 				v.Prerelease = patchParts[1]
 			}
 		} else {
-			v.Patch, _ = strconv.Atoi(parts[2])
+			v.Patch, v.Prerelease = splitAlphaSuffix(parts[2])
 		}
 	}
 	if len(parts) > 3 && v.Prerelease == "" { //nolint:mnd
 		v.Prerelease = strings.Join(parts[3:], ".")
 	}
 	return v
+}
+
+// splitAlphaSuffix splits a segment into its leading integer and a trailing
+// suffix that starts with a letter. "2b1" -> (2, "b1"), "dev1" -> (0, "dev1"),
+// "5" -> (5, ""). Segments whose non-numeric tail does not start with a letter
+// (e.g. "0|2", "0~rc1") return ("", 0) with the tail dropped, matching the
+// previous behaviour for schemes we don't yet handle here.
+func splitAlphaSuffix(s string) (int, string) {
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i < len(s) && isLetter(s[i]) {
+		n, _ := strconv.Atoi(s[:i])
+		return n, s[i:]
+	}
+	n, _ := strconv.Atoi(s)
+	return n, ""
+}
+
+func isLetter(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
 // String returns the normalized version string.
@@ -272,13 +294,20 @@ func CompareWithScheme(a, b, scheme string) int {
 		return 1
 	}
 
+	return compareFuncFor(scheme)(a, b)
+}
+
+// compareFuncFor returns the version comparison function for a scheme.
+func compareFuncFor(scheme string) func(a, b string) int {
 	switch scheme {
 	case "nuget": //nolint:goconst
-		return compareNuGet(a, b)
+		return compareNuGet
 	case "maven":
-		return compareMaven(a, b)
+		return compareMaven
+	case "pypi": //nolint:goconst
+		return comparePyPI
 	default:
-		return CompareVersions(a, b)
+		return CompareVersions
 	}
 }
 
@@ -539,7 +568,7 @@ type mavenComponent struct {
 // Maven qualifier ordering
 // Order: alpha < beta < milestone < rc < snapshot < "" (release) < sp < unknown < numbers
 //
-//nolint:mnd
+//nolint:mnd,goconst
 var mavenQualifierOrder = map[string]int{
 	"alpha":     1,
 	"beta":      2,
