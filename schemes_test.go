@@ -161,6 +161,13 @@ func TestSchemeAwareSharedAPIs(t *testing.T) {
 	if !c.Satisfies("1.0.dev1") {
 		t.Error("scheme-aware constraint should order dev before alpha")
 	}
+	genericConstraint, err := ParseConstraint("<1.0a1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !genericConstraint.SatisfiesWithScheme("1.0.dev1", schemePyPI) {
+		t.Error("SatisfiesWithScheme should override generic constraint ordering")
+	}
 
 	interval := NewInterval("1.0.dev1", "1.0a1", true, false)
 	if interval.IsEmptyWithScheme("pypi") || !interval.ContainsWithScheme("1.0.dev2", "pypi") {
