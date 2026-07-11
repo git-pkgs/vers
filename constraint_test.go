@@ -16,6 +16,7 @@ func TestParseConstraint(t *testing.T) {
 		{"=1.0.0", "=", "1.0.0", false},
 		{"!=1.5.0", "!=", "1.5.0", false},
 		{"1.0.0", "=", "1.0.0", false}, // No operator defaults to =
+		{"1.0%2Bmeta", "=", "1.0+meta", false},
 		{"", "", "", true},
 		{">=", "", "", true}, // Missing version
 	}

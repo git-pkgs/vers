@@ -51,6 +51,11 @@ func (i Interval) IsEmpty() bool {
 	return i.isEmptyCmp(CompareVersions)
 }
 
+// IsEmptyWithScheme reports whether the interval is empty under a version scheme.
+func (i Interval) IsEmptyWithScheme(scheme string) bool {
+	return i.isEmptyCmp(compareFuncFor(scheme))
+}
+
 func (i Interval) isEmptyCmp(cmp func(a, b string) int) bool {
 	if i.Min != "" && i.Max != "" {
 		c := cmp(i.Min, i.Max)
@@ -72,6 +77,11 @@ func (i Interval) IsUnbounded() bool {
 // Contains checks if the interval contains the given version.
 func (i Interval) Contains(version string) bool {
 	return i.containsCmp(version, CompareVersions)
+}
+
+// ContainsWithScheme checks containment under a version scheme.
+func (i Interval) ContainsWithScheme(version, scheme string) bool {
+	return i.containsCmp(version, compareFuncFor(scheme))
 }
 
 func (i Interval) containsCmp(version string, cmp func(a, b string) int) bool {
@@ -116,6 +126,11 @@ func (i Interval) containsCmp(version string, cmp func(a, b string) int) bool {
 // Intersect returns the intersection of two intervals.
 func (i Interval) Intersect(other Interval) Interval {
 	return i.intersectCmp(other, CompareVersions)
+}
+
+// IntersectWithScheme returns the intersection under a version scheme.
+func (i Interval) IntersectWithScheme(other Interval, scheme string) Interval {
+	return i.intersectCmp(other, compareFuncFor(scheme))
 }
 
 func (i Interval) intersectCmp(other Interval, cmp func(a, b string) int) Interval {
@@ -179,6 +194,11 @@ func (i Interval) Overlaps(other Interval) bool {
 	return i.overlapsCmp(other, CompareVersions)
 }
 
+// OverlapsWithScheme reports overlap under a version scheme.
+func (i Interval) OverlapsWithScheme(other Interval, scheme string) bool {
+	return i.overlapsCmp(other, compareFuncFor(scheme))
+}
+
 func (i Interval) overlapsCmp(other Interval, cmp func(a, b string) int) bool {
 	if i.isEmptyCmp(cmp) || other.isEmptyCmp(cmp) {
 		return false
@@ -189,6 +209,11 @@ func (i Interval) overlapsCmp(other Interval, cmp func(a, b string) int) bool {
 // Adjacent returns true if the two intervals are adjacent (can be merged).
 func (i Interval) Adjacent(other Interval) bool {
 	return i.adjacentCmp(other, CompareVersions)
+}
+
+// AdjacentWithScheme reports adjacency under a version scheme.
+func (i Interval) AdjacentWithScheme(other Interval, scheme string) bool {
+	return i.adjacentCmp(other, compareFuncFor(scheme))
 }
 
 func (i Interval) adjacentCmp(other Interval, cmp func(a, b string) int) bool {
@@ -210,6 +235,11 @@ func (i Interval) adjacentCmp(other Interval, cmp func(a, b string) int) bool {
 // Union returns the union of two intervals, or nil if they cannot be merged.
 func (i Interval) Union(other Interval) *Interval {
 	return i.unionCmp(other, CompareVersions)
+}
+
+// UnionWithScheme returns the union under a version scheme.
+func (i Interval) UnionWithScheme(other Interval, scheme string) *Interval {
+	return i.unionCmp(other, compareFuncFor(scheme))
 }
 
 func (i Interval) unionCmp(other Interval, cmp func(a, b string) int) *Interval {
@@ -269,7 +299,16 @@ func (i Interval) unionCmp(other Interval, cmp func(a, b string) int) *Interval 
 
 // String returns a string representation of the interval.
 func (i Interval) String() string {
-	if i.IsEmpty() {
+	return i.stringCmp(CompareVersions)
+}
+
+// StringWithScheme formats the interval under a version scheme.
+func (i Interval) StringWithScheme(scheme string) string {
+	return i.stringCmp(compareFuncFor(scheme))
+}
+
+func (i Interval) stringCmp(cmp func(a, b string) int) string {
+	if i.isEmptyCmp(cmp) {
 		return "empty"
 	}
 	if i.IsUnbounded() {
