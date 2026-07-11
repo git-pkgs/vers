@@ -585,17 +585,27 @@ func (p *Parser) parsePessimisticRange(version string) (*Range, error) {
 func (p *Parser) parsePypiRange(s string) (*Range, error) {
 	s = strings.TrimSpace(s)
 
+	// Comma is AND in PEP 440: parse each specifier and intersect.
+	if strings.Contains(s, ",") {
+		var result *Range
+		for _, part := range strings.Split(s, ",") {
+			r, err := p.parsePypiRange(part)
+			if err != nil {
+				return nil, err
+			}
+			if result == nil {
+				result = r
+			} else {
+				result = result.Intersect(r)
+			}
+		}
+		return result, nil
+	}
+
 	// Compatible release: ~=1.4.2
 	if strings.HasPrefix(s, "~=") {
 		version := strings.TrimSpace(s[2:])
 		return p.parsePypiCompatibleRelease(version)
-	}
-
-	// Comma-separated constraints
-	if strings.Contains(s, ",") {
-		parts := strings.Split(s, ",")
-		constraintStr := strings.Join(parts, "|")
-		return p.parseConstraints(constraintStr, "pypi")
 	}
 
 	return p.parseConstraints(s, "pypi")

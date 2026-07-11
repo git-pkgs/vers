@@ -424,6 +424,16 @@ func TestPyPICompatibleRelease(t *testing.T) {
 		{"~=1!1.4.5", "1!1.4.6", true},
 		{"~=1!1.4.5", "1!1.5", false},
 		{"~=1!1.4.5", "1.4.6", false},
+		// ~= composed with other comma-separated specifiers (comma is AND)
+		{"~=1.4.2,!=1.4.5", "1.4.5", false},
+		{"~=1.4.2,!=1.4.5", "1.4.6", true},
+		{"~=1.4.2,!=1.4.5", "1.5", false},
+		{">=1.0,~=1.4", "2.0", false},
+		{">=1.0,~=1.4", "1.4", true},
+		{">=1.0,~=1.4", "1.9", true},
+		{"~=1.4, !=1.4.5, <1.4.8", "1.4.6", true},
+		{"~=1.4, !=1.4.5, <1.4.8", "1.4.5", false},
+		{"~=1.4, !=1.4.5, <1.4.8", "1.4.9", false},
 	}
 	for _, tt := range tests {
 		got, err := Satisfies(tt.version, tt.constraint, "pypi")
