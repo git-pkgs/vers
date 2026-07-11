@@ -23,7 +23,7 @@
 package vers
 
 // Version is the library version.
-const Version = "0.1.0"
+const Version = "0.3.0"
 
 // Parse parses a vers URI string into a Range.
 //
