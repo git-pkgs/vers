@@ -260,6 +260,9 @@ func CompareVersions(a, b string) int {
 	if b == "" {
 		return 1
 	}
+	if SemanticVersionRegex.MatchString(a) && SemanticVersionRegex.MatchString(b) {
+		return compareSemver(a, b)
+	}
 
 	va, errA := ParseVersion(a)
 	vb, errB := ParseVersion(b)
@@ -300,14 +303,51 @@ func CompareWithScheme(a, b, scheme string) int {
 // compareFuncFor returns the version comparison function for a scheme.
 func compareFuncFor(scheme string) func(a, b string) int {
 	switch scheme {
+	case "semver", "npm", "cargo", "go", "golang", "hex", "elixir":
+		return compareSemver
+	case "gem", "rubygems":
+		return compareGem
+	case "deb", "debian":
+		return compareDebian
+	case "rpm":
+		return compareRPM
 	case "nuget": //nolint:goconst
 		return compareNuGet
 	case "maven":
 		return compareMaven
 	case "pypi": //nolint:goconst
 		return comparePyPI
+	case "lexicographic", "datetime":
+		return cmpString
+	case "intdot":
+		return compareIntDot
+	case "apk", "alpine", "gentoo":
+		return compareGentoo
+	case "alpm":
+		return compareALPM
+	case "conan":
+		return compareConan
+	case "openssl":
+		return compareOpenSSL
 	default:
 		return CompareVersions
+	}
+}
+
+func canonicalScheme(scheme string) string {
+	switch scheme {
+	case "rubygems":
+		return "gem"
+	case "debian":
+		return "deb"
+	case "golang":
+		return "go"
+	case "elixir":
+		return "hex"
+	case "alpine":
+		return "apk"
+	default:
+		return scheme
 	}
 }
 
@@ -319,11 +359,8 @@ func compareNuGet(a, b string) int {
 
 	// Compare numeric parts (up to 4)
 	for i := 0; i < 4; i++ {
-		if partsA.numeric[i] < partsB.numeric[i] {
-			return -1
-		}
-		if partsA.numeric[i] > partsB.numeric[i] {
-			return 1
+		if c := cmpNumStr(partsA.numeric[i], partsB.numeric[i]); c != 0 {
+			return c
 		}
 	}
 
@@ -344,7 +381,7 @@ func compareNuGet(a, b string) int {
 }
 
 type nugetVersion struct {
-	numeric    [4]int // major, minor, patch, revision
+	numeric    [4]string // major, minor, patch, revision
 	prerelease string
 }
 
@@ -365,61 +402,19 @@ func parseNuGetVersion(s string) nugetVersion {
 	// Parse numeric parts
 	parts := strings.Split(s, ".")
 	for i := 0; i < len(parts) && i < 4; i++ {
-		result.numeric[i], _ = strconv.Atoi(parts[i])
+		if isDigits(parts[i]) {
+			result.numeric[i] = parts[i]
+		}
 	}
 
 	return result
 }
 
 func compareNuGetPrerelease(a, b string) int {
-	// NuGet prerelease comparison: case-insensitive, dot-separated, numeric parts compared numerically
+	// NuGet prerelease comparison is SemVer 2 ordering, case-insensitive.
 	partsA := strings.Split(strings.ToLower(a), ".")
 	partsB := strings.Split(strings.ToLower(b), ".")
-
-	maxLen := len(partsA)
-	if len(partsB) > maxLen {
-		maxLen = len(partsB)
-	}
-
-	for i := 0; i < maxLen; i++ {
-		var partA, partB string
-		if i < len(partsA) {
-			partA = partsA[i]
-		}
-		if i < len(partsB) {
-			partB = partsB[i]
-		}
-
-		if partA == "" {
-			return -1
-		}
-		if partB == "" {
-			return 1
-		}
-
-		// Try numeric comparison
-		numA, errA := strconv.Atoi(partA)
-		numB, errB := strconv.Atoi(partB)
-
-		if errA == nil && errB == nil {
-			if numA < numB {
-				return -1
-			}
-			if numA > numB {
-				return 1
-			}
-		} else {
-			// String comparison (already lowercased)
-			if partA < partB {
-				return -1
-			}
-			if partA > partB {
-				return 1
-			}
-		}
-	}
-
-	return 0
+	return compareSemverPrerelease(partsA, partsB)
 }
 
 // compareMaven compares two Maven version strings.
@@ -493,7 +488,7 @@ func compareMavenDifferentLevels(a, b mavenComponent) int {
 
 func compareMavenSameLevel(a, b mavenComponent) int {
 	if a.isNumeric && b.isNumeric {
-		return cmpInt(a.numeric, b.numeric)
+		return cmpNumStr(a.numeric, b.numeric)
 	}
 	if a.isNumeric {
 		return 1 // numeric > any qualifier
@@ -542,11 +537,8 @@ func compareMavenToNull(comp mavenComponent) int {
 }
 
 func compareMavenNumericToNull(comp mavenComponent) int {
-	if comp.numeric == 0 {
+	if cmpNumStr(comp.numeric, "0") == 0 {
 		return 0
-	}
-	if comp.afterDash && comp.numeric < 0 {
-		return -1
 	}
 	return 1
 }
@@ -559,7 +551,7 @@ func compareMavenQualifierToNull(qualifier string) int {
 
 type mavenComponent struct {
 	isNumeric bool
-	numeric   int
+	numeric   string
 	qualifier string
 	isNull    bool
 	afterDash bool // true if this component came after a dash (or digit-letter transition)
@@ -603,9 +595,7 @@ func parseMavenVersion(s string) []mavenComponent {
 		// Check if next part is a digit (for single-letter qualifier normalization)
 		nextIsDigit := false
 		if i+1 < len(parts) {
-			if _, err := strconv.Atoi(parts[i+1]); err == nil {
-				nextIsDigit = true
-			}
+			nextIsDigit = isDigits(parts[i+1])
 		}
 		// Normalize qualifier aliases
 		normalized := normalizeMavenQualifierWithNext(part, nextIsDigit)
@@ -617,8 +607,8 @@ func parseMavenVersion(s string) []mavenComponent {
 		if i < len(afterDashFlags) {
 			afterDash = afterDashFlags[i]
 		}
-		if num, err := strconv.Atoi(normalized); err == nil {
-			result = append(result, mavenComponent{isNumeric: true, numeric: num, afterDash: afterDash})
+		if isDigits(normalized) {
+			result = append(result, mavenComponent{isNumeric: true, numeric: normalized, afterDash: afterDash})
 		} else {
 			result = append(result, mavenComponent{qualifier: normalized, afterDash: afterDash})
 		}
@@ -655,7 +645,7 @@ func normalizeMavenComponents(components []mavenComponent) []mavenComponent {
 	if firstSublistIdx > 0 {
 		// Trim trailing zeros from base (indices 0 to firstSublistIdx-1)
 		baseEnd := firstSublistIdx
-		for baseEnd > 1 && components[baseEnd-1].isNumeric && components[baseEnd-1].numeric == 0 {
+		for baseEnd > 1 && components[baseEnd-1].isNumeric && cmpNumStr(components[baseEnd-1].numeric, "0") == 0 {
 			baseEnd--
 		}
 		if baseEnd < firstSublistIdx {
@@ -669,7 +659,7 @@ func normalizeMavenComponents(components []mavenComponent) []mavenComponent {
 		// No sublist - just remove trailing zeros from the end
 		for len(components) > 0 {
 			last := components[len(components)-1]
-			if last.isNumeric && last.numeric == 0 {
+			if last.isNumeric && cmpNumStr(last.numeric, "0") == 0 {
 				components = components[:len(components)-1]
 			} else {
 				break

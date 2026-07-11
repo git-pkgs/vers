@@ -34,6 +34,10 @@ type versionCmpInput struct {
 	Versions    []string `json:"versions"`
 }
 
+type roundtripInput struct {
+	Vers string `json:"vers"`
+}
+
 func loadTestFile(t *testing.T, filename string) *versTestFile {
 	t.Helper()
 	path := filepath.Join("testdata", "vers-spec", "tests", filename)
@@ -50,8 +54,12 @@ func loadTestFile(t *testing.T, filename string) *versTestFile {
 
 func TestConformance_FromNative(t *testing.T) {
 	files := []string{
+		"conan_range_from_native_basic_test.json",
+		"conan_range_from_native_test.json",
 		"gem_range_from_native_test.json",
+		"nginx_range_from_native_test.json",
 		"npm_range_from_native_test.json",
+		"openssl_range_from_native_test.json",
 		"pypi_range_from_native_test.json",
 		"nuget_range_from_native_test.json",
 	}
@@ -136,11 +144,45 @@ func TestConformance_Containment(t *testing.T) {
 	}
 }
 
+func TestConformance_RoundTrip(t *testing.T) {
+	tf := loadTestFile(t, "pypi_range_roundtrip_test.json")
+	for _, tc := range tf.Tests {
+		if tc.TestType != "roundtrip" {
+			continue
+		}
+		var input roundtripInput
+		if err := json.Unmarshal(tc.Input, &input); err != nil {
+			t.Errorf("failed to parse input: %v", err)
+			continue
+		}
+		var expected string
+		if err := json.Unmarshal(tc.ExpectedOutput, &expected); err != nil {
+			t.Errorf("failed to parse expected output: %v", err)
+			continue
+		}
+		t.Run(input.Vers, func(t *testing.T) {
+			r, err := Parse(input.Vers)
+			if err != nil {
+				t.Fatalf("Parse(%q) error: %v", input.Vers, err)
+			}
+			if got := ToVersString(r, r.Scheme); got != expected {
+				t.Errorf("round trip = %q, want %q", got, expected)
+			}
+		})
+	}
+}
+
 //nolint:gocognit
 func TestConformance_VersionComparison(t *testing.T) {
 	files := []string{
+		"alpine_version_cmp_test.json",
+		"alpm_version_cmp_test.json",
+		"conan_version_cmp_test.json",
+		"gentoo_version_cmp_test.json",
+		"lexicographic-test.json",
 		"nuget_version_cmp_test.json",
 		"maven_version_cmp_test.json",
+		"openssl_version_cmp_test.json",
 	}
 
 	for _, file := range files {

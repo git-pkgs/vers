@@ -1,6 +1,7 @@
 package vers
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -116,6 +117,15 @@ func (r *Range) Union(other *Range) *Range {
 	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints, Scheme: r.Scheme}
 }
 
+// UnionChecked returns the union of ranges that use compatible schemes.
+func (r *Range) UnionChecked(other *Range) (*Range, error) {
+	if err := checkRangeSchemes(r, other); err != nil {
+		return nil, err
+	}
+	left, right := rangesWithCommonScheme(r, other)
+	return left.Union(right), nil
+}
+
 // Intersect returns a new Range that is the intersection of this range and another.
 func (r *Range) Intersect(other *Range) *Range {
 	// Combine raw constraints for VERS output (preserved even if result is empty)
@@ -170,6 +180,36 @@ func (r *Range) Intersect(other *Range) *Range {
 	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints, Scheme: r.Scheme}
 }
 
+// IntersectChecked returns the intersection of ranges that use compatible schemes.
+func (r *Range) IntersectChecked(other *Range) (*Range, error) {
+	if err := checkRangeSchemes(r, other); err != nil {
+		return nil, err
+	}
+	left, right := rangesWithCommonScheme(r, other)
+	return left.Intersect(right), nil
+}
+
+func checkRangeSchemes(a, b *Range) error {
+	if a == nil || b == nil {
+		return fmt.Errorf("cannot combine a nil range")
+	}
+	sa, sb := canonicalScheme(a.Scheme), canonicalScheme(b.Scheme)
+	if sa != "" && sb != "" && sa != sb {
+		return fmt.Errorf("cannot combine %q and %q version schemes", a.Scheme, b.Scheme)
+	}
+	return nil
+}
+
+func rangesWithCommonScheme(a, b *Range) (*Range, *Range) {
+	scheme := a.Scheme
+	if scheme == "" {
+		scheme = b.Scheme
+	}
+	left, right := *a, *b
+	left.Scheme, right.Scheme = scheme, scheme
+	return &left, &right
+}
+
 // Exclude returns a new Range that excludes the given version.
 func (r *Range) Exclude(version string) *Range {
 	exclusions := make([]string, len(r.Exclusions), len(r.Exclusions)+1)
@@ -193,8 +233,9 @@ func (r *Range) String() string {
 	}
 
 	var parts []string
+	cmp := compareFuncFor(r.Scheme)
 	for _, interval := range r.Intervals {
-		parts = append(parts, interval.String())
+		parts = append(parts, interval.stringCmp(cmp))
 	}
 
 	result := strings.Join(parts, " | ")

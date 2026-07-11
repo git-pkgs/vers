@@ -45,8 +45,12 @@ func Parse(versURI string) (*Range, error) {
 //   - nuget: [1.0,2.0), (1.0,2.0]
 //   - cargo: ^1.2.3, ~1.2.3, >=1.0.0, <2.0.0
 //   - go: >=1.0.0, <2.0.0
+//   - hex/elixir: ~> 1.2, >= 1.0 and < 2.0
 //   - deb/debian: >= 1.0, << 2.0
 //   - rpm: >= 1.0, <= 2.0
+//   - conan: ^1.2, ~1.2, >1 <2, ||
+//   - openssl: exact versions, optionally comma-separated
+//   - nginx: 0.8.40+, 0.7.52-0.8.39
 func ParseNative(constraint string, scheme string) (*Range, error) {
 	return defaultParser.ParseNative(constraint, scheme)
 }
@@ -99,17 +103,26 @@ func HighestSatisfying(versions []string, constraint, scheme string) (string, er
 	if err != nil {
 		return "", err
 	}
+	effectiveScheme := scheme
+	if effectiveScheme == "" {
+		effectiveScheme = r.Scheme
+	}
 
 	var best string
 	for _, v := range versions {
 		if !r.Contains(v) {
 			continue
 		}
-		if best == "" || CompareWithScheme(v, best, scheme) > 0 {
+		if best == "" || CompareWithScheme(v, best, effectiveScheme) > 0 {
 			best = v
 		}
 	}
 	return best, nil
+}
+
+// ValidWithScheme checks whether a version is valid for the given scheme.
+func ValidWithScheme(version, scheme string) bool {
+	return validVersionForScheme(version, scheme)
 }
 
 // Valid checks if a version string is valid.
@@ -125,6 +138,12 @@ func Normalize(version string) (string, error) {
 		return "", err
 	}
 	return v.String(), nil
+}
+
+// NormalizeWithScheme normalizes a version without discarding scheme-specific
+// components. Schemes without a canonical text form are validated and trimmed.
+func NormalizeWithScheme(version, scheme string) (string, error) {
+	return normalizeVersionForScheme(version, scheme)
 }
 
 // Exact creates a range that matches only the specified version.

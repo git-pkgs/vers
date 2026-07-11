@@ -66,6 +66,11 @@ r, _ = vers.ParseNative(">> 1.0", "deb")
 
 // RPM
 r, _ = vers.ParseNative(">= 1.0", "rpm")
+
+// Conan, OpenSSL, and Nginx
+r, _ = vers.ParseNative("^1.2", "conan")
+r, _ = vers.ParseNative("1.1.1w, 3.0.0", "openssl")
+r, _ = vers.ParseNative("0.8.40+", "nginx")
 ```
 
 ### Check Version Satisfaction
@@ -89,6 +94,10 @@ vers.Compare("1.0.0", "1.0.0")  // 0  (equal)
 
 // Prerelease versions sort before stable
 vers.Compare("1.0.0", "1.0.0-alpha")  // 1 (stable > prerelease)
+
+// Use ecosystem-specific ordering where versions are not SemVer
+vers.CompareWithScheme("1.0~rc1", "1.0", "deb")  // -1
+vers.CompareWithScheme("1.0.beta1", "1.0", "gem") // -1
 ```
 
 ### Version Validation and Normalization
@@ -100,6 +109,9 @@ vers.Valid("invalid")      // false
 v, _ := vers.Normalize("1")      // "1.0.0"
 v, _ = vers.Normalize("1.2")     // "1.2.0"
 v, _ = vers.Normalize("1.2.3")   // "1.2.3"
+
+vers.ValidWithScheme("1:2.3.4-1", "deb") // true
+v, _ = vers.NormalizeWithScheme("01!02.0RC1", "pypi") // "1!2.0rc1"
 ```
 
 ### Create Ranges Programmatically
@@ -150,8 +162,15 @@ uri = vers.ToVersString(r, "npm")
 | NuGet | `nuget` | Same as Maven |
 | Cargo | `cargo` | Same as npm |
 | Go | `go`, `golang` | `>=1.0.0,<2.0.0` |
+| Hex | `hex`, `elixir` | `~> 1.2`, `>= 1.0 and < 2.0` |
 | Debian | `deb`, `debian` | `>> 1.0`, `<< 2.0`, `>= 1.0` |
 | RPM | `rpm` | `>= 1.0`, `<= 2.0` |
+| Conan | `conan` | `^1.2`, `~1.2`, `>1 <2`, `||` |
+| OpenSSL | `openssl` | `1.1.1w`, `1.1.1w, 3.0.0` |
+| Nginx | `nginx` | `0.8.40+`, `0.7.52-0.8.39` |
+
+Version comparison additionally supports `semver`, `apk`/`alpine`, `alpm`,
+`gentoo`, `intdot`, `lexicographic`, and `datetime`.
 
 ## Development
 

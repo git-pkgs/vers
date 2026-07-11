@@ -16,11 +16,17 @@ var operatorRegex = regexp.MustCompile(`^(!=|>=|<=|[<>=])`)
 type Constraint struct {
 	Operator string
 	Version  string
+	Scheme   string
 }
 
 // ParseConstraint parses a constraint string into a Constraint.
 func ParseConstraint(s string) (*Constraint, error) {
 	return parseConstraintWithScheme(s, "")
+}
+
+// ParseConstraintWithScheme parses a constraint using scheme-specific comparison rules.
+func ParseConstraintWithScheme(s, scheme string) (*Constraint, error) {
+	return parseConstraintWithScheme(s, scheme)
 }
 
 // parseConstraintWithScheme parses a constraint with scheme-specific handling.
@@ -47,7 +53,7 @@ func parseConstraintWithScheme(s, scheme string) (*Constraint, error) {
 		if !preserveVPrefix {
 			version = stripVPrefix(version)
 		}
-		return &Constraint{Operator: operator, Version: version}, nil
+		return &Constraint{Operator: operator, Version: version, Scheme: scheme}, nil
 	}
 
 	// No operator found, treat as exact match
@@ -56,9 +62,9 @@ func parseConstraintWithScheme(s, scheme string) (*Constraint, error) {
 		version = decoded
 	}
 	if !preserveVPrefix {
-		version = stripVPrefix(s)
+		version = stripVPrefix(version)
 	}
-	return &Constraint{Operator: "=", Version: version}, nil
+	return &Constraint{Operator: "=", Version: version, Scheme: scheme}, nil
 }
 
 // stripVPrefix removes a leading 'v' or 'V' from version strings.
@@ -98,7 +104,16 @@ func (c *Constraint) IsExclusion() bool {
 
 // Satisfies checks if a version satisfies this constraint.
 func (c *Constraint) Satisfies(version string) bool {
-	cmp := CompareVersions(version, c.Version)
+	return c.satisfiesCmp(version, compareFuncFor(c.Scheme))
+}
+
+// SatisfiesWithScheme checks the constraint using the specified version scheme.
+func (c *Constraint) SatisfiesWithScheme(version, scheme string) bool {
+	return c.satisfiesCmp(version, compareFuncFor(scheme))
+}
+
+func (c *Constraint) satisfiesCmp(version string, compare func(a, b string) int) bool {
+	cmp := compare(version, c.Version)
 
 	switch c.Operator {
 	case "=":

@@ -7,6 +7,7 @@ import (
 )
 
 var versURIRegex = regexp.MustCompile(`^vers:([^/]+)/(.*)$`)
+var nginxRangeRegex = regexp.MustCompile(`^\d+(?:\.\d+)+-\d+(?:\.\d+)+$`)
 
 // Parser handles parsing of vers URIs and native package manager syntax.
 type Parser struct{}
@@ -39,7 +40,7 @@ func (p *Parser) Parse(versURI string) (*Range, error) {
 // ParseNative parses a native package manager version range into a Range.
 func (p *Parser) ParseNative(constraint string, scheme string) (*Range, error) {
 	r, err := p.parseNative(constraint, scheme)
-	if r != nil && r.Scheme == "" {
+	if r != nil {
 		r.Scheme = scheme
 	}
 	return r, err
@@ -67,6 +68,12 @@ func (p *Parser) parseNative(constraint string, scheme string) (*Range, error) {
 		return p.parseDebianRange(constraint)
 	case "rpm":
 		return p.parseRpmRange(constraint)
+	case "conan":
+		return p.parseConanRange(constraint)
+	case "openssl":
+		return p.parseOpenSSLRange(constraint)
+	case "nginx":
+		return p.parseNginxRange(constraint)
 	default:
 		return p.parseConstraints(constraint, scheme)
 	}
@@ -129,7 +136,7 @@ func (p *Parser) ToVersString(r *Range, scheme string) string {
 	}
 
 	// Sort constraints by version
-	sortConstraintsByVersion(constraints)
+	sortConstraintsByVersion(constraints, scheme)
 
 	var strs []string
 	for _, c := range constraints {
@@ -146,11 +153,13 @@ type constraintWithVersion struct {
 }
 
 // sortConstraintsByVersion sorts constraints by their version in ascending order.
-func sortConstraintsByVersion(constraints []constraintWithVersion) {
+func sortConstraintsByVersion(constraints []constraintWithVersion, scheme string) {
+	cmp := compareFuncFor(scheme)
 	// Simple bubble sort to avoid import
 	for i := 0; i < len(constraints); i++ {
 		for j := i + 1; j < len(constraints); j++ {
-			if CompareVersions(constraints[i].sortKey, constraints[j].sortKey) > 0 {
+			order := cmp(constraints[i].sortKey, constraints[j].sortKey)
+			if order > 0 || (order == 0 && constraints[i].str > constraints[j].str) {
 				constraints[i], constraints[j] = constraints[j], constraints[i]
 			}
 		}
@@ -528,12 +537,6 @@ func (p *Parser) parseXRange(s string) (*Range, error) {
 func (p *Parser) parseGemRange(s string) (*Range, error) {
 	s = strings.TrimSpace(s)
 
-	// Pessimistic operator: ~> 1.2.3
-	if strings.HasPrefix(s, "~>") {
-		version := strings.TrimSpace(s[2:])
-		return p.parsePessimisticRange(version)
-	}
-
 	// Comma-separated constraints
 	if strings.Contains(s, ",") {
 		parts := strings.Split(s, ",")
@@ -552,8 +555,43 @@ func (p *Parser) parseGemRange(s string) (*Range, error) {
 		return result, nil
 	}
 
+	// Pessimistic operator: ~> 1.2.3
+	if strings.HasPrefix(s, "~>") {
+		version := strings.TrimSpace(s[2:])
+		return p.parseGemPessimisticRange(version)
+	}
+
 	// Standard constraint
 	return p.parseConstraints(s, "gem")
+}
+
+func (p *Parser) parseGemPessimisticRange(version string) (*Range, error) {
+	if !validVersionForScheme(version, "gem") {
+		return nil, fmt.Errorf("invalid gem version: %s", version)
+	}
+	segments := parseGemRawSegments(version)
+	var release []string
+	for _, segment := range segments {
+		if !segment.num {
+			break
+		}
+		release = append(release, segment.value)
+	}
+	if len(release) == 0 {
+		return nil, fmt.Errorf("invalid gem version: %s", version)
+	}
+	var upper string
+	if len(release) == 1 {
+		upper = incNumStr(release[0])
+	} else {
+		head := release[:len(release)-1]
+		head[len(head)-1] = incNumStr(head[len(head)-1])
+		upper = strings.Join(head, ".")
+	}
+	return &Range{
+		Intervals: []Interval{NewInterval(version, upper, true, false)},
+		Scheme:    "gem",
+	}, nil
 }
 
 // ~> 1.2.3 := >= 1.2.3, < 1.3
@@ -691,7 +729,25 @@ func (p *Parser) parseNugetRange(s string) (*Range, error) {
 
 // cargo: ^1.2.3, ~1.2.3, >=1.0.0
 func (p *Parser) parseCargoRange(s string) (*Range, error) {
-	// Cargo uses similar syntax to npm
+	s = strings.TrimSpace(s)
+	if strings.Contains(s, ",") {
+		var result *Range
+		for _, part := range strings.Split(s, ",") {
+			r, err := p.parseCargoRange(part)
+			if err != nil {
+				return nil, err
+			}
+			if result == nil {
+				result = r
+			} else {
+				result = result.Intersect(r)
+			}
+		}
+		return result, nil
+	}
+	if s != "" && !strings.ContainsAny(s, "^~*<>=") {
+		return p.parseCaretRange(s)
+	}
 	return p.parseNpmRange(s)
 }
 
@@ -811,4 +867,137 @@ func (p *Parser) parseDebianRange(s string) (*Range, error) {
 // rpm: >= 1.0, <= 2.0
 func (p *Parser) parseRpmRange(s string) (*Range, error) {
 	return p.parseConstraints(s, "rpm")
+}
+
+// conan: >1 <2, ~1.2, ^1.2.3, ||
+func (p *Parser) parseConanRange(s string) (*Range, error) {
+	s = strings.TrimSpace(s)
+	if i := strings.Index(s, ","); i >= 0 {
+		s = strings.TrimSpace(s[:i])
+	}
+	if s == "*" || s == "*-" {
+		return NewRange([]Interval{GreaterThanInterval("0.0.0", true)}), nil
+	}
+	if strings.Contains(s, "||") {
+		var intervals, raw []Interval
+		for _, part := range strings.Split(s, "||") {
+			r, err := p.parseConanRange(part)
+			if err != nil {
+				return nil, err
+			}
+			intervals = append(intervals, r.Intervals...)
+			if len(r.RawConstraints) > 0 {
+				raw = append(raw, r.RawConstraints...)
+			} else {
+				raw = append(raw, r.Intervals...)
+			}
+		}
+		return &Range{Intervals: mergeIntervals(intervals, compareConan), RawConstraints: raw}, nil
+	}
+	if strings.Contains(s, " ") {
+		var result *Range
+		for _, part := range tokenizeNpmConstraints(s) {
+			r, err := p.parseConanRange(part)
+			if err != nil {
+				return nil, err
+			}
+			if result == nil {
+				result = r
+			} else {
+				result = result.Intersect(r)
+			}
+		}
+		return result, nil
+	}
+
+	s = strings.TrimSuffix(s, "-")
+	if strings.HasPrefix(s, "~") || strings.HasPrefix(s, "^") {
+		operator, version := s[0], strings.TrimSpace(s[1:])
+		upper, err := conanUpperBound(version, operator)
+		if err != nil {
+			return nil, err
+		}
+		return NewRange([]Interval{NewInterval(version, upper, true, false)}), nil
+	}
+	return p.parseConstraints(s, "conan")
+}
+
+func conanUpperBound(version string, operator byte) (string, error) {
+	parts := strings.Split(version, ".")
+	for _, part := range parts {
+		if !isDigits(part) {
+			return "", fmt.Errorf("invalid conan version range: %c%s", operator, version)
+		}
+	}
+
+	index := 0
+	if operator == '~' && len(parts) > 1 {
+		index = 1
+	} else if operator == '^' {
+		for index < len(parts)-1 && cmpNumStr(parts[index], "0") == 0 {
+			index++
+		}
+	}
+	upper := append([]string(nil), parts[:index+1]...)
+	upper[index] = incNumStr(upper[index])
+	return strings.Join(upper, ".") + "-", nil
+}
+
+// openssl native ranges are comma-separated exact releases.
+func (p *Parser) parseOpenSSLRange(s string) (*Range, error) {
+	return p.parseExactList(s, "openssl")
+}
+
+func (p *Parser) parseExactList(s, scheme string) (*Range, error) {
+	parts := strings.Split(s, ",")
+	intervals := make([]Interval, 0, len(parts))
+	for _, part := range parts {
+		version := strings.TrimSpace(part)
+		if version == "" {
+			return nil, fmt.Errorf("empty %s version", scheme)
+		}
+		if !validVersionForScheme(version, scheme) {
+			return nil, fmt.Errorf("invalid %s version: %s", scheme, version)
+		}
+		intervals = append(intervals, ExactInterval(version))
+	}
+	return NewRange(intervals), nil
+}
+
+// nginx: 0.8.40+, 0.7.52-0.8.39, comma-separated unions.
+func (p *Parser) parseNginxRange(s string) (*Range, error) {
+	s = strings.TrimSpace(s)
+	if strings.Contains(s, ",") {
+		var intervals, raw []Interval
+		for _, part := range strings.Split(s, ",") {
+			r, err := p.parseNginxRange(part)
+			if err != nil {
+				return nil, err
+			}
+			intervals = append(intervals, r.Intervals...)
+			raw = append(raw, r.Intervals...)
+		}
+		return &Range{Intervals: mergeIntervals(intervals, compareSemver), RawConstraints: raw}, nil
+	}
+	if strings.HasSuffix(s, "+") {
+		version := strings.TrimSuffix(s, "+")
+		if !validSemverLike(version) {
+			return nil, fmt.Errorf("invalid nginx version range: %s", s)
+		}
+		parts := strings.Split(version, ".")
+		if len(parts) < 2 || !isDigits(parts[1]) {
+			return nil, fmt.Errorf("invalid nginx version range: %s", s)
+		}
+		interval := GreaterThanInterval(version, true)
+		minor := trimLeadingZeros(parts[1])
+		if minor[len(minor)-1]%2 == 0 {
+			interval.Max = strings.Join([]string{parts[0], incNumStr(parts[1]), "0"}, ".")
+		}
+		return NewRange([]Interval{interval}), nil
+	}
+	if nginxRangeRegex.MatchString(s) {
+		parts := strings.SplitN(s, "-", 2) //nolint:mnd
+		return NewRange([]Interval{NewInterval(parts[0], parts[1], true, true)}), nil
+	}
+	return p.parseConstraints(s, "nginx")
 }
