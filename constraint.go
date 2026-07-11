@@ -38,7 +38,7 @@ func parseConstraintWithScheme(s, scheme string) (*Constraint, error) {
 	}
 
 	// Go versions preserve the v prefix
-	preserveVPrefix := scheme == "go" || scheme == "golang"
+	preserveVPrefix := scheme == schemeGo || scheme == schemeGolang
 
 	matches := operatorRegex.FindStringSubmatch(s)
 	if matches != nil {

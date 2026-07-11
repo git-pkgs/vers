@@ -24,8 +24,8 @@ var pep440Regex = regexp.MustCompile(`(?i)^\s*v?` +
 
 //nolint:goconst,mnd
 var pep440PreTags = map[string]int{
-	"a": 0, "alpha": 0,
-	"b": 1, "beta": 1,
+	"a": 0, qualifierAlpha: 0,
+	"b": 1, qualifierBeta: 1,
 	"c": 2, "rc": 2, "pre": 2, "preview": 2,
 }
 

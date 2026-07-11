@@ -218,7 +218,7 @@ func compareGentooBase(a, b string) int {
 			continue
 		}
 		var c int
-		if !strings.HasPrefix(pa[i], "0") && !strings.HasPrefix(pb[i], "0") {
+		if i == 0 || (!strings.HasPrefix(pa[i], "0") && !strings.HasPrefix(pb[i], "0")) {
 			c = cmpNumStr(pa[i], pb[i])
 		} else {
 			c = cmpString(strings.TrimRight(pa[i], "0"), strings.TrimRight(pb[i], "0"))
@@ -282,9 +282,9 @@ func parseGentooSuffix(s string) (kind, number string) {
 
 func gentooSuffixRank(s string) int {
 	switch s {
-	case "alpha":
+	case qualifierAlpha:
 		return -4
-	case "beta":
+	case qualifierBeta:
 		return -3
 	case "pre":
 		return -2

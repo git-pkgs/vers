@@ -177,7 +177,7 @@ func splitDebianVersion(s string) (epoch, upstream, revision string) {
 	return epoch, upstream, revision
 }
 
-func compareDebianPart(a, b string) int {
+func compareDebianPart(a, b string) int { //nolint:gocognit
 	for ia, ib := 0, 0; ia < len(a) || ib < len(b); {
 		for (ia < len(a) && !isASCIIDigit(a[ia])) || (ib < len(b) && !isASCIIDigit(b[ib])) {
 			var ca, cb byte
@@ -259,7 +259,7 @@ func splitRPMVersion(s string) (epoch, version, release string) {
 	return epoch, version, release
 }
 
-func compareRPMPart(a, b string) int { //nolint:gocyclo
+func compareRPMPart(a, b string) int { //nolint:gocyclo,gocognit
 	ia, ib := 0, 0
 	for ia < len(a) || ib < len(b) {
 		for ia < len(a) && !isASCIIAlnum(a[ia]) && a[ia] != '~' && a[ia] != '^' {

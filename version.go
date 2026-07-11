@@ -8,6 +8,36 @@ import (
 	"sync"
 )
 
+const (
+	schemeALPM          = "alpm"
+	schemeAlpine        = "alpine"
+	schemeAPK           = "apk"
+	schemeCargo         = "cargo"
+	schemeConan         = "conan"
+	schemeDatetime      = "datetime"
+	schemeDeb           = "deb"
+	schemeDebian        = "debian"
+	schemeElixir        = "elixir"
+	schemeGem           = "gem"
+	schemeGentoo        = "gentoo"
+	schemeGo            = "go"
+	schemeGolang        = "golang"
+	schemeHex           = "hex"
+	schemeIntDot        = "intdot"
+	schemeLexicographic = "lexicographic"
+	schemeMaven         = "maven"
+	schemeNginx         = "nginx"
+	schemeNPM           = "npm"
+	schemeNuGet         = "nuget"
+	schemeOpenSSL       = "openssl"
+	schemePyPI          = "pypi"
+	schemeRPM           = "rpm"
+	schemeRubyGems      = "rubygems"
+	schemeSemVer        = "semver"
+	qualifierAlpha      = "alpha"
+	qualifierBeta       = "beta"
+)
+
 // SemanticVersionRegex matches semantic version strings (with optional v prefix).
 var SemanticVersionRegex = regexp.MustCompile(`^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([^+]+))?(?:\+(.+))?$`)
 
@@ -303,31 +333,35 @@ func CompareWithScheme(a, b, scheme string) int {
 // compareFuncFor returns the version comparison function for a scheme.
 func compareFuncFor(scheme string) func(a, b string) int {
 	switch scheme {
-	case "semver", "npm", "cargo", "go", "golang", "hex", "elixir":
+	case schemeSemVer, schemeNPM, schemeCargo, schemeGo, schemeGolang, schemeHex, schemeElixir, schemeNginx:
 		return compareSemver
-	case "gem", "rubygems":
+	case schemeGem, schemeRubyGems:
 		return compareGem
-	case "deb", "debian":
+	case schemeDeb, schemeDebian:
 		return compareDebian
-	case "rpm":
+	case schemeRPM:
 		return compareRPM
-	case "nuget": //nolint:goconst
+	case schemeNuGet:
 		return compareNuGet
-	case "maven":
+	case schemeMaven:
 		return compareMaven
-	case "pypi": //nolint:goconst
+	case schemePyPI:
 		return comparePyPI
-	case "lexicographic", "datetime":
+	case schemeLexicographic, schemeDatetime:
 		return cmpString
-	case "intdot":
+	case schemeIntDot:
 		return compareIntDot
-	case "apk", "alpine", "gentoo":
+	case schemeAPK, schemeAlpine:
+		// This covers the vendored Alpine cases, but is not a full apk-tools
+		// implementation; APK has additional VCS suffix and letter rules.
 		return compareGentoo
-	case "alpm":
+	case schemeGentoo:
+		return compareGentoo
+	case schemeALPM:
 		return compareALPM
-	case "conan":
+	case schemeConan:
 		return compareConan
-	case "openssl":
+	case schemeOpenSSL:
 		return compareOpenSSL
 	default:
 		return CompareVersions
@@ -336,16 +370,16 @@ func compareFuncFor(scheme string) func(a, b string) int {
 
 func canonicalScheme(scheme string) string {
 	switch scheme {
-	case "rubygems":
-		return "gem"
-	case "debian":
-		return "deb"
-	case "golang":
-		return "go"
-	case "elixir":
-		return "hex"
-	case "alpine":
-		return "apk"
+	case schemeRubyGems:
+		return schemeGem
+	case schemeDebian:
+		return schemeDeb
+	case schemeGolang:
+		return schemeGo
+	case schemeElixir:
+		return schemeHex
+	case schemeAlpine:
+		return schemeAPK
 	default:
 		return scheme
 	}
@@ -562,13 +596,13 @@ type mavenComponent struct {
 //
 //nolint:mnd,goconst
 var mavenQualifierOrder = map[string]int{
-	"alpha":     1,
-	"beta":      2,
-	"milestone": 3,
-	"rc":        4,
-	"snapshot":  5,
-	"":          6, // release
-	"sp":        7, // sp comes after release but before unknown qualifiers
+	qualifierAlpha: 1,
+	qualifierBeta:  2,
+	"milestone":    3,
+	"rc":           4,
+	"snapshot":     5,
+	"":             6, // release
+	"sp":           7, // sp comes after release but before unknown qualifiers
 }
 
 func getMavenQualifierOrder(q string) (int, bool) {
@@ -691,9 +725,9 @@ func normalizeMavenQualifierWithNext(q string, nextIsDigit bool) string {
 	if nextIsDigit && len(q) == 1 {
 		switch q {
 		case "a":
-			return "alpha"
+			return qualifierAlpha
 		case "b":
-			return "beta"
+			return qualifierBeta
 		case "m":
 			return "milestone"
 		}

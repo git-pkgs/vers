@@ -125,6 +125,7 @@ func TestExistingSchemeComparatorEdges(t *testing.T) {
 		{"maven", "1.999999999999999999999999", "1.2", 1},
 		{"lexicographic", "10", "2", -1},
 		{"intdot", "1.0.0.1", "1.0.0", 1},
+		{"gentoo", "01", "1", 0},
 	}
 	for _, tt := range tests {
 		if got := CompareWithScheme(tt.a, tt.b, tt.scheme); got != tt.want {
@@ -238,6 +239,8 @@ func TestNativeRangeSchemeEdges(t *testing.T) {
 		{"gem", "~> 1.0, < 1.5", "1.4", true},
 		{"gem", "~> 1.0, < 1.5", "1.6", false},
 		{"cargo", ">=1.2.3, <2.0.0", "1.5.0", true},
+		{"nginx", "0.8.40+", "0.8.50", true},
+		{"nginx", "0.8.40+", "0.9.0", false},
 	}
 	for _, tt := range tests {
 		got, err := Satisfies(tt.version, tt.constraint, tt.scheme)

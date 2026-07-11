@@ -19,25 +19,25 @@ func validVersionForScheme(version, scheme string) bool { //nolint:gocyclo
 	}
 
 	switch scheme {
-	case "pypi":
+	case schemePyPI:
 		_, ok := parsePEP440(version)
 		return ok
-	case "semver", "npm", "cargo", "go", "golang", "hex", "elixir":
+	case schemeSemVer, schemeNPM, schemeCargo, schemeGo, schemeGolang, schemeHex, schemeElixir:
 		return validSemverLike(version)
-	case "gem", "rubygems":
+	case schemeGem, schemeRubyGems:
 		return gemVersionRegex.MatchString(version)
-	case "deb", "debian":
+	case schemeDeb, schemeDebian:
 		return validDebianVersion(version)
-	case "rpm":
+	case schemeRPM:
 		return validRPMVersion(version)
-	case "nuget":
+	case schemeNuGet:
 		return nugetVersionRegex.MatchString(version)
-	case "intdot":
+	case schemeIntDot:
 		return intDotVersionRegex.MatchString(version)
-	case "openssl":
+	case schemeOpenSSL:
 		_, ok := parseOpenSSLVersion(version)
 		return ok
-	case "maven", "lexicographic", "datetime", "apk", "alpine", "gentoo", "alpm", "conan":
+	case schemeMaven, schemeLexicographic, schemeDatetime, schemeAPK, schemeAlpine, schemeGentoo, schemeALPM, schemeConan:
 		return !strings.ContainsAny(version, " \t\r\n")
 	default:
 		return Valid(version)
@@ -54,13 +54,13 @@ func normalizeVersionForScheme(version, scheme string) (string, error) {
 	}
 
 	switch scheme {
-	case "pypi":
+	case schemePyPI:
 		v, _ := parsePEP440(version)
 		return formatPEP440(v), nil
-	case "semver", "npm", "cargo", "go", "golang", "hex", "elixir":
-		return normalizeSemverLike(version, scheme == "go" || scheme == "golang"), nil
-	case "gem", "rubygems", "deb", "debian", "rpm", "nuget", "intdot", "openssl",
-		"maven", "lexicographic", "datetime", "apk", "alpine", "gentoo", "alpm", "conan":
+	case schemeSemVer, schemeNPM, schemeCargo, schemeGo, schemeGolang, schemeHex, schemeElixir:
+		return normalizeSemverLike(version, scheme == schemeGo || scheme == schemeGolang), nil
+	case schemeGem, schemeRubyGems, schemeDeb, schemeDebian, schemeRPM, schemeNuGet, schemeIntDot, schemeOpenSSL,
+		schemeMaven, schemeLexicographic, schemeDatetime, schemeAPK, schemeAlpine, schemeGentoo, schemeALPM, schemeConan:
 		return version, nil
 	default:
 		return Normalize(version)

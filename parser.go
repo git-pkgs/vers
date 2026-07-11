@@ -48,31 +48,31 @@ func (p *Parser) ParseNative(constraint string, scheme string) (*Range, error) {
 
 func (p *Parser) parseNative(constraint string, scheme string) (*Range, error) {
 	switch scheme {
-	case "npm":
+	case schemeNPM:
 		return p.parseNpmRange(constraint)
-	case "gem", "rubygems":
+	case schemeGem, schemeRubyGems:
 		return p.parseGemRange(constraint)
-	case "pypi": //nolint:goconst
+	case schemePyPI:
 		return p.parsePypiRange(constraint)
-	case "maven":
+	case schemeMaven:
 		return p.parseMavenRange(constraint)
-	case "nuget": //nolint:goconst
+	case schemeNuGet:
 		return p.parseNugetRange(constraint)
-	case "cargo":
+	case schemeCargo:
 		return p.parseCargoRange(constraint)
-	case "go", "golang":
+	case schemeGo, schemeGolang:
 		return p.parseGoRange(constraint)
-	case "hex", "elixir":
+	case schemeHex, schemeElixir:
 		return p.parseHexRange(constraint)
-	case "deb", "debian":
+	case schemeDeb, schemeDebian:
 		return p.parseDebianRange(constraint)
-	case "rpm":
+	case schemeRPM:
 		return p.parseRpmRange(constraint)
-	case "conan":
+	case schemeConan:
 		return p.parseConanRange(constraint)
-	case "openssl":
+	case schemeOpenSSL:
 		return p.parseOpenSSLRange(constraint)
-	case "nginx":
+	case schemeNginx:
 		return p.parseNginxRange(constraint)
 	default:
 		return p.parseConstraints(constraint, scheme)
@@ -193,7 +193,7 @@ func normalizeVersion(version, scheme string) string {
 	dots := strings.Count(version, ".")
 
 	switch scheme {
-	case "npm", "cargo", "nuget":
+	case schemeNPM, schemeCargo, schemeNuGet:
 		// These schemes use semver, normalize to 3 parts
 		switch dots {
 		case 0:
@@ -562,11 +562,11 @@ func (p *Parser) parseGemRange(s string) (*Range, error) {
 	}
 
 	// Standard constraint
-	return p.parseConstraints(s, "gem")
+	return p.parseConstraints(s, schemeGem)
 }
 
 func (p *Parser) parseGemPessimisticRange(version string) (*Range, error) {
-	if !validVersionForScheme(version, "gem") {
+	if !validVersionForScheme(version, schemeGem) {
 		return nil, fmt.Errorf("invalid gem version: %s", version)
 	}
 	segments := parseGemRawSegments(version)
@@ -584,13 +584,13 @@ func (p *Parser) parseGemPessimisticRange(version string) (*Range, error) {
 	if len(release) == 1 {
 		upper = incNumStr(release[0])
 	} else {
-		head := release[:len(release)-1]
+		head := append([]string(nil), release[:len(release)-1]...)
 		head[len(head)-1] = incNumStr(head[len(head)-1])
 		upper = strings.Join(head, ".")
 	}
 	return &Range{
 		Intervals: []Interval{NewInterval(version, upper, true, false)},
-		Scheme:    "gem",
+		Scheme:    schemeGem,
 	}, nil
 }
 
@@ -646,7 +646,7 @@ func (p *Parser) parsePypiRange(s string) (*Range, error) {
 		return p.parsePypiCompatibleRelease(version)
 	}
 
-	return p.parseConstraints(s, "pypi")
+	return p.parseConstraints(s, schemePyPI)
 }
 
 // parsePypiCompatibleRelease handles PEP 440 ~= by deriving the upper bound
@@ -666,7 +666,7 @@ func (p *Parser) parsePypiCompatibleRelease(version string) (*Range, error) {
 			return nil, err
 		}
 	}
-	r.Scheme = "pypi" //nolint:goconst
+	r.Scheme = schemePyPI
 	return r, nil
 }
 
@@ -687,7 +687,7 @@ func (p *Parser) parseMavenRange(s string) (*Range, error) {
 		}), nil
 	}
 
-	return p.parseConstraints(s, "maven")
+	return p.parseConstraints(s, schemeMaven)
 }
 
 func (p *Parser) parseBracketRange(s string) (*Range, error) {
@@ -758,7 +758,7 @@ func (p *Parser) parseGoRange(s string) (*Range, error) {
 		parts := strings.Split(s, ",")
 		var result *Range
 		for _, part := range parts {
-			constraint, err := parseConstraintWithScheme(strings.TrimSpace(part), "go")
+			constraint, err := parseConstraintWithScheme(strings.TrimSpace(part), schemeGo)
 			if err != nil {
 				return nil, err
 			}
@@ -776,7 +776,7 @@ func (p *Parser) parseGoRange(s string) (*Range, error) {
 		return result, nil
 	}
 
-	return p.parseConstraints(s, "go")
+	return p.parseConstraints(s, schemeGo)
 }
 
 // hex/elixir: ~> 1.2.3, >= 1.0.0 and < 2.0.0, ~> 1.0 or ~> 2.0
@@ -861,12 +861,12 @@ func (p *Parser) parseDebianRange(s string) (*Range, error) {
 	// Convert Debian operators to standard
 	s = strings.ReplaceAll(s, ">>", ">")
 	s = strings.ReplaceAll(s, "<<", "<")
-	return p.parseConstraints(s, "deb")
+	return p.parseConstraints(s, schemeDeb)
 }
 
 // rpm: >= 1.0, <= 2.0
 func (p *Parser) parseRpmRange(s string) (*Range, error) {
-	return p.parseConstraints(s, "rpm")
+	return p.parseConstraints(s, schemeRPM)
 }
 
 // conan: >1 <2, ~1.2, ^1.2.3, ||
@@ -919,7 +919,7 @@ func (p *Parser) parseConanRange(s string) (*Range, error) {
 		}
 		return NewRange([]Interval{NewInterval(version, upper, true, false)}), nil
 	}
-	return p.parseConstraints(s, "conan")
+	return p.parseConstraints(s, schemeConan)
 }
 
 func conanUpperBound(version string, operator byte) (string, error) {
@@ -945,7 +945,7 @@ func conanUpperBound(version string, operator byte) (string, error) {
 
 // openssl native ranges are comma-separated exact releases.
 func (p *Parser) parseOpenSSLRange(s string) (*Range, error) {
-	return p.parseExactList(s, "openssl")
+	return p.parseExactList(s, schemeOpenSSL)
 }
 
 func (p *Parser) parseExactList(s, scheme string) (*Range, error) {
@@ -999,5 +999,5 @@ func (p *Parser) parseNginxRange(s string) (*Range, error) {
 		parts := strings.SplitN(s, "-", 2) //nolint:mnd
 		return NewRange([]Interval{NewInterval(parts[0], parts[1], true, true)}), nil
 	}
-	return p.parseConstraints(s, "nginx")
+	return p.parseConstraints(s, schemeNginx)
 }
