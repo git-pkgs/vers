@@ -173,7 +173,6 @@ func countGemSegments(s string) int {
 }
 
 func appendGemSegments(parts []gemSegment, s string) []gemSegment {
-	s = strings.TrimSpace(s)
 	for i := 0; i < len(s); {
 		switch {
 		case s[i] == '-':
@@ -199,7 +198,7 @@ func appendGemSegments(parts []gemSegment, s string) []gemSegment {
 }
 
 func parseGemSegments(parts []gemSegment, s string) []gemSegment {
-	parts = appendGemSegments(parts, s)
+	parts = appendGemSegments(parts, strings.TrimSpace(s))
 
 	firstAlpha := -1
 	for i, part := range parts {
