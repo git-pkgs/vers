@@ -286,7 +286,7 @@ func gentooSuffixRank(s string) int {
 		return -4
 	case qualifierBeta:
 		return -3
-	case "pre":
+	case qualifierPre:
 		return -2
 	case "rc":
 		return -1

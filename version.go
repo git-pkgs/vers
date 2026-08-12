@@ -36,13 +36,11 @@ const (
 	schemeSemVer        = "semver"
 	qualifierAlpha      = "alpha"
 	qualifierBeta       = "beta"
+	qualifierPre        = "pre"
 )
 
 // SemanticVersionRegex matches semantic version strings (with optional v prefix).
 var SemanticVersionRegex = regexp.MustCompile(`^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([^+]+))?(?:\+(.+))?$`)
-
-// simpleNumericRegex matches simple numeric versions like "1" or "42".
-var simpleNumericRegex = regexp.MustCompile(`^\d+$`)
 
 // versionCache caches parsed versions to avoid re-parsing the same strings.
 var versionCache = &boundedCache{
@@ -103,13 +101,13 @@ func ParseVersion(s string) (*VersionInfo, error) {
 func parseVersionUncached(s string) (*VersionInfo, error) {
 	v := &VersionInfo{Original: s}
 
-	if simpleNumericRegex.MatchString(s) {
+	if isDigits(s) {
 		v.Major, _ = strconv.Atoi(s)
 		return v, nil
 	}
 
-	if matches := SemanticVersionRegex.FindStringSubmatch(s); matches != nil {
-		return parseSemverMatches(v, matches), nil
+	if semver, ok := parseSemverValue(s); ok {
+		return parseSemverValueInfo(v, semver), nil
 	}
 
 	if strings.Contains(s, ".") {
@@ -128,18 +126,20 @@ func parseVersionUncached(s string) (*VersionInfo, error) {
 	return nil, fmt.Errorf("invalid version format: %s", s)
 }
 
-func parseSemverMatches(v *VersionInfo, matches []string) *VersionInfo {
-	if matches[1] != "" {
-		v.Major, _ = strconv.Atoi(matches[1])
+func parseSemverValueInfo(v *VersionInfo, semver semverValue) *VersionInfo {
+	if semver.core[0] != "" {
+		v.Major, _ = strconv.Atoi(semver.core[0])
 	}
-	if matches[2] != "" {
-		v.Minor, _ = strconv.Atoi(matches[2])
+	if semver.core[1] != "" {
+		v.Minor, _ = strconv.Atoi(semver.core[1])
 	}
-	if matches[3] != "" {
-		v.Patch, _ = strconv.Atoi(matches[3])
+	if semver.core[2] != "" {
+		v.Patch, _ = strconv.Atoi(semver.core[2])
 	}
-	v.Prerelease = matches[4]
-	v.Build = matches[5]
+	v.Prerelease = semver.pre
+	if i := strings.IndexByte(v.Original, '+'); i >= 0 {
+		v.Build = v.Original[i+1:]
+	}
 	return v
 }
 
@@ -290,8 +290,15 @@ func CompareVersions(a, b string) int {
 	if b == "" {
 		return 1
 	}
-	if SemanticVersionRegex.MatchString(a) && SemanticVersionRegex.MatchString(b) {
-		return compareSemver(a, b)
+	if va, ok := parseSemverValue(a); ok {
+		if vb, ok := parseSemverValue(b); ok {
+			for i := range va.core {
+				if c := cmpNumStr(va.core[i], vb.core[i]); c != 0 {
+					return c
+				}
+			}
+			return compareSemverPrereleaseStrings(va.pre, vb.pre)
+		}
 	}
 
 	va, errA := ParseVersion(a)
@@ -433,11 +440,16 @@ func parseNuGetVersion(s string) nugetVersion {
 		s = s[:idx]
 	}
 
-	// Parse numeric parts
-	parts := strings.Split(s, ".")
-	for i := 0; i < len(parts) && i < 4; i++ {
-		if isDigits(parts[i]) {
-			result.numeric[i] = parts[i]
+	// Parse numeric parts without allocating a temporary slice.
+	for i := 0; i < len(result.numeric) && s != ""; i++ {
+		part := s
+		if dot := strings.IndexByte(s, '.'); dot >= 0 {
+			part, s = s[:dot], s[dot+1:]
+		} else {
+			s = ""
+		}
+		if isDigits(part) {
+			result.numeric[i] = part
 		}
 	}
 
@@ -446,9 +458,7 @@ func parseNuGetVersion(s string) nugetVersion {
 
 func compareNuGetPrerelease(a, b string) int {
 	// NuGet prerelease comparison is SemVer 2 ordering, case-insensitive.
-	partsA := strings.Split(strings.ToLower(a), ".")
-	partsB := strings.Split(strings.ToLower(b), ".")
-	return compareSemverPrerelease(partsA, partsB)
+	return compareSemverPrereleaseStrings(strings.ToLower(a), strings.ToLower(b))
 }
 
 // compareMaven compares two Maven version strings.

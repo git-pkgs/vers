@@ -152,6 +152,7 @@ func TestIntervalContains(t *testing.T) {
 		{"(1.0.0,2.0.0] excludes 1.0.0", NewInterval("1.0.0", "2.0.0", false, true), "1.0.0", false},
 		{"unbounded contains anything", UnboundedInterval(), "999.999.999", true},
 		{"empty contains nothing", EmptyInterval(), "1.0.0", false},
+		{"equal exclusive bounds contain nothing", NewInterval("1.0.0", "1.0.0", true, false), "1.0.0", false},
 	}
 
 	for _, tt := range tests {

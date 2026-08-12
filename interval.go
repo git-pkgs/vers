@@ -85,13 +85,6 @@ func (i Interval) ContainsWithScheme(version, scheme string) bool {
 }
 
 func (i Interval) containsCmp(version string, cmp func(a, b string) int) bool {
-	if i.isEmptyCmp(cmp) {
-		return false
-	}
-	if i.IsUnbounded() {
-		return true
-	}
-
 	// Check minimum bound
 	if i.Min != "" {
 		c := cmp(version, i.Min)

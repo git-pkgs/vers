@@ -104,6 +104,49 @@ func BenchmarkCompare_Prerelease(b *testing.B) {
 	}
 }
 
+func BenchmarkCompareWithScheme(b *testing.B) {
+	tests := []struct {
+		name, a, other, scheme string
+	}{
+		{name: "Semver", a: "1.2.3-alpha.1", other: "1.2.3-beta.2", scheme: "npm"},
+		{name: "Gem", a: "1.2.3.pre.1", other: "1.2.3", scheme: "gem"},
+		{name: "PyPI", a: "1.2.3rc1", other: "1.2.3", scheme: "pypi"},
+		{name: "Maven", a: "1.2.3-rc1", other: "1.2.3", scheme: "maven"},
+		{name: "NuGet", a: "1.2.3-alpha.1", other: "1.2.3", scheme: "nuget"},
+		{name: "Debian", a: "1:1.2.3-1", other: "1:1.2.3-2", scheme: "deb"},
+		{name: "RPM", a: "1:1.2.3-1", other: "1:1.2.3-2", scheme: "rpm"},
+	}
+	for _, tt := range tests {
+		b.Run(tt.name, func(b *testing.B) {
+			for b.Loop() {
+				CompareWithScheme(tt.a, tt.other, tt.scheme)
+			}
+		})
+	}
+}
+
+func BenchmarkParseConstraint(b *testing.B) {
+	for b.Loop() {
+		_, _ = ParseConstraint(">=1.2.3")
+	}
+}
+
+func BenchmarkParseVersion_Cached(b *testing.B) {
+	_, _ = ParseVersion("1.2.3-alpha.1+build.5")
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = ParseVersion("1.2.3-alpha.1+build.5")
+	}
+}
+
+func BenchmarkValid_Simple(b *testing.B) {
+	_, _ = ParseVersion("1.2.3")
+	b.ResetTimer()
+	for b.Loop() {
+		Valid("1.2.3")
+	}
+}
+
 // Range operation benchmarks
 
 func BenchmarkUnion_TwoRanges(b *testing.B) {
@@ -160,5 +203,15 @@ func BenchmarkSatisfies_VersURI(b *testing.B) {
 func BenchmarkSatisfies_Native(b *testing.B) {
 	for b.Loop() {
 		_, _ = Satisfies("1.5.0", "^1.2.3", "npm")
+	}
+}
+
+func BenchmarkHighestSatisfying_Npm(b *testing.B) {
+	versions := []string{
+		"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0",
+		"1.8.0", "1.9.0", "2.0.0-alpha.1", "2.0.0", "2.1.0", "3.0.0",
+	}
+	for b.Loop() {
+		_, _ = HighestSatisfying(versions, "^1.2.0", "npm")
 	}
 }
