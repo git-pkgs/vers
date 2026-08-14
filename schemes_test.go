@@ -1,6 +1,84 @@
 package vers
 
-import "testing"
+import (
+	"math/rand"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+	"testing/quick"
+)
+
+func TestSemverScannerMatchesRegex(t *testing.T) {
+	t.Parallel()
+
+	tests := []string{
+		"", "v", "1", "v1", "V1", "1.", "1.2", "1.2.3", "1.2.3.4", "1.2.3.-rc1", "1.2.3.+build",
+		"1-rc.1", "1-", "1+build", "1+", "1-pre+build", "1-pre+build+more",
+		"1-alpha.", "1-alpha..1", "1-\n", "1-\n+build", "1+build\n", "١.2.3",
+	}
+	for _, input := range tests {
+		_, got := parseSemverValue(input)
+		want := SemanticVersionRegex.MatchString(input)
+		if got != want {
+			t.Errorf("parseSemverValue(%q) valid = %v, want %v", input, got, want)
+		}
+	}
+
+	err := quick.Check(func(input string) bool {
+		_, got := parseSemverValue(input)
+		return got == SemanticVersionRegex.MatchString(input)
+	}, &quick.Config{
+		MaxCount: 10000,
+		Rand:     rand.New(rand.NewSource(1)), //nolint:gosec
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCompareSemverEmptyPrereleaseIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{a: "1-alpha.", b: "1-alpha", want: 1},
+		{a: "1-alpha..1", b: "1-alpha.0.1", want: 1},
+		{a: "1-.", b: "1-..", want: -1},
+	}
+	for _, tt := range tests {
+		if got := compareSemver(tt.a, tt.b); got != tt.want {
+			t.Errorf("compareSemver(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
+
+func TestGemScannerMatchesRegexp(t *testing.T) {
+	t.Parallel()
+
+	segmentRegexp := regexp.MustCompile(`[0-9]+|[A-Za-z]+`)
+	reference := func(input string) []gemSegment {
+		input = strings.ReplaceAll(strings.TrimSpace(input), "-", ".pre.")
+		raw := segmentRegexp.FindAllString(input, -1)
+		segments := make([]gemSegment, 0, len(raw))
+		for _, part := range raw {
+			segments = append(segments, gemSegment{value: part, num: isDigits(part)})
+		}
+		return segments
+	}
+
+	err := quick.Check(func(input string) bool {
+		return slices.Equal(parseGemRawSegments(input), reference(input))
+	}, &quick.Config{
+		MaxCount: 10000,
+		Rand:     rand.New(rand.NewSource(2)), //nolint:gosec
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestSemverSchemeComparison(t *testing.T) {
 	tests := []struct {
@@ -122,6 +200,8 @@ func TestExistingSchemeComparatorEdges(t *testing.T) {
 	}{
 		{"nuget", "1.0.0-2", "1.0.0-0a", -1},
 		{"nuget", "1.0.0-999999999999999999999999", "1.0.0-1000000000000000000000000", -1},
+		{"nuget", "1.0.0-ALPHA.1", "1.0.0-alpha.2", -1},
+		{"nuget", "1.0.0-alpha.", "1.0.0-alpha", 1},
 		{"maven", "1.999999999999999999999999", "1.2", 1},
 		{"lexicographic", "10", "2", -1},
 		{"intdot", "1.0.0.1", "1.0.0", 1},

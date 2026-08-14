@@ -37,6 +37,8 @@ func TestParseVersURI(t *testing.T) {
 		// Error cases
 		{"invalid format", "invalid", "", false, true},
 		{"missing scheme", "vers:/>=1.0.0", "", false, true},
+		{"missing separator", "vers:npm", "", false, true},
+		{"newline in constraints", "vers:npm/>=1.0.0\n", "", false, true},
 	}
 
 	parser := NewParser()

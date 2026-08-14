@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-var versURIRegex = regexp.MustCompile(`^vers:([^/]+)/(.*)$`)
 var nginxRangeRegex = regexp.MustCompile(`^\d+(?:\.\d+)+-\d+(?:\.\d+)+$`)
 
 // Parser handles parsing of vers URIs and native package manager syntax.
@@ -19,13 +18,18 @@ func NewParser() *Parser {
 
 // Parse parses a vers URI string into a Range.
 func (p *Parser) Parse(versURI string) (*Range, error) {
-	matches := versURIRegex.FindStringSubmatch(versURI)
-	if matches == nil {
+	const prefix = "vers:"
+	if !strings.HasPrefix(versURI, prefix) {
+		return nil, fmt.Errorf("invalid vers URI format: %s", versURI)
+	}
+	remainder := versURI[len(prefix):]
+	slash := strings.IndexByte(remainder, '/')
+	if slash <= 0 || strings.IndexByte(remainder[slash+1:], '\n') >= 0 {
 		return nil, fmt.Errorf("invalid vers URI format: %s", versURI)
 	}
 
-	scheme := matches[1]
-	constraintsStr := matches[2]
+	scheme := remainder[:slash]
+	constraintsStr := remainder[slash+1:]
 
 	// Handle wildcard for unbounded range
 	if constraintsStr == "*" || constraintsStr == "" {
