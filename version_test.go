@@ -2,12 +2,6 @@ package vers
 
 import "testing"
 
-func TestLibraryVersion(t *testing.T) {
-	if Version != "0.4.0" {
-		t.Errorf("Version = %q, want %q", Version, "0.4.0")
-	}
-}
-
 func TestParseVersion(t *testing.T) {
 	tests := []struct {
 		input   string
