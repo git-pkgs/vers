@@ -13,6 +13,7 @@ const (
 	schemeAlpine        = "alpine"
 	schemeAPK           = "apk"
 	schemeCargo         = "cargo"
+	schemeComposer      = "composer"
 	schemeConan         = "conan"
 	schemeDatetime      = "datetime"
 	schemeDeb           = "deb"
@@ -31,6 +32,7 @@ const (
 	schemeNuGet         = "nuget"
 	schemeOpenSSL       = "openssl"
 	schemePyPI          = "pypi"
+	schemePub           = "pub"
 	schemeRPM           = "rpm"
 	schemeRubyGems      = "rubygems"
 	schemeSemVer        = "semver"
@@ -342,6 +344,10 @@ func compareFuncFor(scheme string) func(a, b string) int {
 	switch scheme {
 	case schemeSemVer, schemeNPM, schemeCargo, schemeGo, schemeGolang, schemeHex, schemeElixir, schemeNginx:
 		return compareSemver
+	case schemeComposer:
+		return compareComposer
+	case schemePub:
+		return comparePub
 	case schemeGem, schemeRubyGems:
 		return compareGem
 	case schemeDeb, schemeDebian:

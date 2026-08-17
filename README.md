@@ -43,6 +43,11 @@ r, _ = vers.ParseNative("~1.2.3", "npm")
 r, _ = vers.ParseNative("1.0.0 - 2.0.0", "npm")
 r, _ = vers.ParseNative(">=1.0.0 <2.0.0", "npm")
 
+// Composer: caret, tilde, wildcard, hyphen, AND and OR ranges
+r, _ = vers.ParseNative("^1.2.3", "composer")
+r, _ = vers.ParseNative("~1.2", "composer")
+r, _ = vers.ParseNative(">=1.0 <1.1 || >=1.2", "composer")
+
 // Ruby gems: pessimistic operator
 r, _ = vers.ParseNative("~> 1.2", "gem")
 r, _ = vers.ParseNative(">= 1.0, < 2.0", "gem")
@@ -51,6 +56,10 @@ r, _ = vers.ParseNative(">= 1.0, < 2.0", "gem")
 r, _ = vers.ParseNative("~=1.4.2", "pypi")
 r, _ = vers.ParseNative(">=1.0.0,<2.0.0,!=1.5.0", "pypi")
 r, _ = vers.ParseNative("==2.32.4", "pypi")
+
+// Pub: caret and traditional intersection syntax
+r, _ = vers.ParseNative("^1.2.3", "pub")
+r, _ = vers.ParseNative(">=1.2.3 <2.0.0", "pub")
 
 // Maven/NuGet: bracket notation
 r, _ = vers.ParseNative("[1.0,2.0)", "maven")
@@ -167,8 +176,10 @@ uri = vers.ToVersString(r, "npm")
 | Ecosystem | Scheme | Example Syntax |
 |-----------|--------|----------------|
 | npm | `npm` | `^1.2.3`, `~1.2.3`, `>=1.0.0 <2.0.0`, `1.x`, `1.0.0 - 2.0.0` |
+| Composer | `composer` | `^1.2.3`, `~1.2`, `1.2.*`, `>=1.0 <2.0`, `||` |
 | RubyGems | `gem`, `rubygems` | `~> 1.2`, `>= 1.0, < 2.0` |
 | PyPI | `pypi` | `~=1.4.2`, `>=1.0.0,<2.0.0`, `!=1.5.0` |
+| Pub | `pub` | `^1.2.3`, `>=1.2.3 <2.0.0`, `any` |
 | Maven | `maven` | `[1.0,2.0)`, `(1.0,2.0]`, `[1.0,)`, `[1.0]` |
 | NuGet | `nuget` | Same as Maven |
 | Cargo | `cargo` | Same as npm |
