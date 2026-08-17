@@ -71,6 +71,34 @@ func (r *Range) IsUnbounded() bool {
 	return false
 }
 
+// ExactVersion reports whether the range matches exactly one version and
+// returns the version used for its bounds. Bounds that compare equal under
+// the range's scheme count as the same version. An exclusion only prevents a
+// result when it excludes that version.
+func (r *Range) ExactVersion() (string, bool) {
+	if r == nil || len(r.Intervals) != 1 {
+		return "", false
+	}
+
+	interval := r.Intervals[0]
+	if interval.Min == "" || interval.Max == "" ||
+		!interval.MinInclusive || !interval.MaxInclusive {
+		return "", false
+	}
+
+	cmp := compareFuncFor(r.Scheme)
+	if cmp(interval.Min, interval.Max) != 0 {
+		return "", false
+	}
+	for _, exclusion := range r.Exclusions {
+		if cmp(interval.Min, exclusion) == 0 {
+			return "", false
+		}
+	}
+
+	return interval.Min, true
+}
+
 // Union returns a new Range that is the union of this range and another.
 func (r *Range) Union(other *Range) *Range {
 	if r.IsEmpty() {

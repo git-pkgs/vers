@@ -1,6 +1,9 @@
 package vers
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Issue #24: PyPI prerelease versions are mis-parsed (5.2b1 becomes 5.0.0).
 // https://github.com/git-pkgs/vers/issues/24
@@ -486,5 +489,38 @@ func TestPyPINativeRangeContains(t *testing.T) {
 		if got := r.Contains(tt.version); got != tt.want {
 			t.Errorf("ParseNative(%q, pypi).Contains(%q) = %v, want %v", tt.constraint, tt.version, got, tt.want)
 		}
+	}
+}
+
+func TestPyPINativeEquality(t *testing.T) {
+	tests := []struct {
+		constraint string
+		want       string
+	}{
+		{constraint: "==2.32.4", want: "2.32.4"},
+		{constraint: "== 0.28.1", want: "0.28.1"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.constraint, func(t *testing.T) {
+			r, err := ParseNative(test.constraint, "pypi")
+			if err != nil {
+				t.Fatalf("ParseNative(%q, pypi) error = %v", test.constraint, err)
+			}
+			got, ok := r.ExactVersion()
+			if got != test.want || !ok {
+				t.Errorf("ExactVersion() = (%q, %v), want (%q, true)", got, ok, test.want)
+			}
+		})
+	}
+}
+
+func TestPyPINativeArbitraryEqualityIsRejected(t *testing.T) {
+	_, err := ParseNative("===1.0", "pypi")
+	if err == nil {
+		t.Fatal("ParseNative(===1.0, pypi) error = nil, want unsupported constraint error")
+	}
+	if !strings.Contains(err.Error(), "arbitrary equality") {
+		t.Errorf("ParseNative(===1.0, pypi) error = %q, want arbitrary equality context", err)
 	}
 }

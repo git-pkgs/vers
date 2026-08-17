@@ -50,6 +50,7 @@ r, _ = vers.ParseNative(">= 1.0, < 2.0", "gem")
 // Python: compatible release, exclusions
 r, _ = vers.ParseNative("~=1.4.2", "pypi")
 r, _ = vers.ParseNative(">=1.0.0,<2.0.0,!=1.5.0", "pypi")
+r, _ = vers.ParseNative("==2.32.4", "pypi")
 
 // Maven/NuGet: bracket notation
 r, _ = vers.ParseNative("[1.0,2.0)", "maven")
@@ -136,6 +137,16 @@ union := r1.Union(r2)             // >=1.0.0 OR <2.0.0
 
 // Add exclusions
 r = r.Exclude("1.5.0")
+```
+
+### Detect Exact Ranges
+
+```go
+r, _ := vers.ParseNative("==2.32.4", "pypi")
+version, exact := r.ExactVersion() // "2.32.4", true
+
+r, _ = vers.ParseNative("^2.32.4", "npm")
+_, exact = r.ExactVersion() // false
 ```
 
 ### Convert Back to VERS URI
