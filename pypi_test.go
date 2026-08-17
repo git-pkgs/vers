@@ -1,6 +1,9 @@
 package vers
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Issue #24: PyPI prerelease versions are mis-parsed (5.2b1 becomes 5.0.0).
 // https://github.com/git-pkgs/vers/issues/24
@@ -509,5 +512,15 @@ func TestPyPINativeEquality(t *testing.T) {
 				t.Errorf("ExactVersion() = (%q, %v), want (%q, true)", got, ok, test.want)
 			}
 		})
+	}
+}
+
+func TestPyPINativeArbitraryEqualityIsRejected(t *testing.T) {
+	_, err := ParseNative("===1.0", "pypi")
+	if err == nil {
+		t.Fatal("ParseNative(===1.0, pypi) error = nil, want unsupported constraint error")
+	}
+	if !strings.Contains(err.Error(), "arbitrary equality") {
+		t.Errorf("ParseNative(===1.0, pypi) error = %q, want arbitrary equality context", err)
 	}
 }
