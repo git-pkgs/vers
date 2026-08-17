@@ -649,6 +649,9 @@ func (p *Parser) parsePypiRange(s string) (*Range, error) {
 		version := strings.TrimSpace(s[2:])
 		return p.parsePypiCompatibleRelease(version)
 	}
+	if strings.HasPrefix(s, "==") && !strings.HasPrefix(s, "===") {
+		s = "=" + strings.TrimSpace(s[2:])
+	}
 
 	return p.parseConstraints(s, schemePyPI)
 }

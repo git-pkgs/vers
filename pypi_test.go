@@ -488,3 +488,26 @@ func TestPyPINativeRangeContains(t *testing.T) {
 		}
 	}
 }
+
+func TestPyPINativeEquality(t *testing.T) {
+	tests := []struct {
+		constraint string
+		want       string
+	}{
+		{constraint: "==2.32.4", want: "2.32.4"},
+		{constraint: "== 0.28.1", want: "0.28.1"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.constraint, func(t *testing.T) {
+			r, err := ParseNative(test.constraint, "pypi")
+			if err != nil {
+				t.Fatalf("ParseNative(%q, pypi) error = %v", test.constraint, err)
+			}
+			got, ok := r.ExactVersion()
+			if got != test.want || !ok {
+				t.Errorf("ExactVersion() = (%q, %v), want (%q, true)", got, ok, test.want)
+			}
+		})
+	}
+}

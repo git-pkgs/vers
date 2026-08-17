@@ -125,6 +125,70 @@ func TestRangeIsUnbounded(t *testing.T) {
 	}
 }
 
+func TestRangeExactVersion(t *testing.T) {
+	tests := []struct {
+		name        string
+		rangeValue  *Range
+		wantVersion string
+		wantOK      bool
+	}{
+		{name: "nil range"},
+		{name: "empty range", rangeValue: Empty()},
+		{name: "unbounded range", rangeValue: Unbounded()},
+		{name: "exact range", rangeValue: Exact("1.2.3"), wantVersion: "1.2.3", wantOK: true},
+		{
+			name: "scheme equivalent bounds",
+			rangeValue: &Range{
+				Intervals: []Interval{NewInterval("1.0", "1.0.0", true, true)},
+				Scheme:    "pypi",
+			},
+			wantVersion: "1.0",
+			wantOK:      true,
+		},
+		{
+			name:       "exclusive bound",
+			rangeValue: NewRange([]Interval{NewInterval("1.2.3", "1.2.3", true, false)}),
+		},
+		{
+			name:       "bounded range",
+			rangeValue: NewRange([]Interval{NewInterval("1.0.0", "2.0.0", true, true)}),
+		},
+		{
+			name: "matching exclusion",
+			rangeValue: &Range{
+				Intervals:  []Interval{ExactInterval("1.2.3")},
+				Exclusions: []string{"1.2.3"},
+			},
+		},
+		{
+			name: "unrelated exclusion",
+			rangeValue: &Range{
+				Intervals:  []Interval{ExactInterval("1.2.3")},
+				Exclusions: []string{"2.0.0"},
+			},
+			wantVersion: "1.2.3",
+			wantOK:      true,
+		},
+		{
+			name: "multiple intervals",
+			rangeValue: NewRange([]Interval{
+				ExactInterval("1.2.3"),
+				ExactInterval("2.0.0"),
+			}),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			gotVersion, gotOK := test.rangeValue.ExactVersion()
+			if gotVersion != test.wantVersion || gotOK != test.wantOK {
+				t.Errorf("ExactVersion() = (%q, %v), want (%q, %v)",
+					gotVersion, gotOK, test.wantVersion, test.wantOK)
+			}
+		})
+	}
+}
+
 func TestRangeUnion(t *testing.T) {
 	tests := []struct {
 		name    string
