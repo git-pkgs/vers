@@ -1,0 +1,43 @@
+{
+  "$schema": "https://packageurl.org/schemas/vers-test.schema-0.2.json",
+  "tests": [
+    {
+      "description": "Composer orders stability qualifiers.",
+      "test_group": "recommended",
+      "test_type": "comparison",
+      "input": {
+        "input_type": "composer",
+        "versions": [
+          "1.0.0",
+          "1.0.0-beta1",
+          "1.0.0-dev",
+          "1.0.0-RC1",
+          "1.0.0-alpha2"
+        ]
+      },
+      "expected_output": [
+        "1.0.0-dev",
+        "1.0.0-alpha2",
+        "1.0.0-beta1",
+        "1.0.0-RC1",
+        "1.0.0"
+      ]
+    },
+    {
+      "description": "Composer orders numeric stability suffixes numerically.",
+      "test_group": "recommended",
+      "test_type": "comparison",
+      "input": {
+        "input_type": "composer",
+        "versions": [
+          "1.0.0-beta10",
+          "1.0.0-beta2"
+        ]
+      },
+      "expected_output": [
+        "1.0.0-beta2",
+        "1.0.0-beta10"
+      ]
+    }
+  ]
+}

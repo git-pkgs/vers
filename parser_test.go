@@ -529,6 +529,18 @@ func TestToVersStringEncodesMetacharacters(t *testing.T) {
 	if !parsed.Contains("1.0|2.0") {
 		t.Error("roundtrip should preserve exact version with metacharacter")
 	}
+
+	percent := parser.ToVersString(Exact("1.0%2F0"), "npm")
+	if percent != "vers:npm/1.0%252F0" {
+		t.Errorf("ToVersString() with percent = %q, want %q", percent, "vers:npm/1.0%252F0")
+	}
+	parsed, err = parser.Parse(percent)
+	if err != nil {
+		t.Fatalf("Parse(%q): %v", percent, err)
+	}
+	if version, ok := parsed.ExactVersion(); !ok || version != "1.0%2F0" {
+		t.Errorf("Parse(%q).ExactVersion() = %q, %v, want %q, true", percent, version, ok, "1.0%2F0")
+	}
 }
 
 func TestPublicAPISatisfies(t *testing.T) {

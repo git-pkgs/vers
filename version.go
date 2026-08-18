@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -360,8 +361,10 @@ func compareFuncFor(scheme string) func(a, b string) int {
 		return compareMaven
 	case schemePyPI:
 		return comparePyPI
-	case schemeLexicographic, schemeDatetime:
+	case schemeLexicographic:
 		return cmpString
+	case schemeDatetime:
+		return compareDatetime
 	case schemeIntDot:
 		return compareIntDot
 	case schemeAPK, schemeAlpine:
@@ -379,6 +382,15 @@ func compareFuncFor(scheme string) func(a, b string) int {
 	default:
 		return CompareVersions
 	}
+}
+
+func compareDatetime(a, b string) int {
+	ta, errA := time.Parse(time.RFC3339Nano, a)
+	tb, errB := time.Parse(time.RFC3339Nano, b)
+	if errA != nil || errB != nil {
+		return cmpString(a, b)
+	}
+	return ta.Compare(tb)
 }
 
 func canonicalScheme(scheme string) string {

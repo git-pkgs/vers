@@ -2,6 +2,7 @@ package vers
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -18,13 +19,20 @@ func NewParser() *Parser {
 
 // Parse parses a vers URI string into a Range.
 func (p *Parser) Parse(versURI string) (*Range, error) {
+	return p.parseVersURI(versURI, false)
+}
+
+func (p *Parser) parseVersURI(versURI string, requireCanonicalOrder bool) (*Range, error) {
 	const prefix = "vers:"
 	if !strings.HasPrefix(versURI, prefix) {
 		return nil, fmt.Errorf("invalid vers URI format: %s", versURI)
 	}
+	if strings.ContainsAny(versURI, " \t\r\n") {
+		return nil, fmt.Errorf("non-canonical VERS: whitespace is not permitted")
+	}
 	remainder := versURI[len(prefix):]
 	slash := strings.IndexByte(remainder, '/')
-	if slash <= 0 || strings.IndexByte(remainder[slash+1:], '\n') >= 0 {
+	if slash <= 0 {
 		return nil, fmt.Errorf("invalid vers URI format: %s", versURI)
 	}
 
@@ -37,8 +45,83 @@ func (p *Parser) Parse(versURI string) (*Range, error) {
 		r.Scheme = scheme
 		return r, nil
 	}
+	if err := validateVersConstraints(constraintsStr, scheme, requireCanonicalOrder); err != nil {
+		return nil, err
+	}
 
 	return p.parseConstraints(constraintsStr, scheme)
+}
+
+func validateVersConstraints(constraints, scheme string, requireCanonicalOrder bool) error {
+	if strings.HasPrefix(constraints, "|") {
+		return fmt.Errorf("non-canonical VERS: leading pipe is not permitted")
+	}
+	if strings.HasSuffix(constraints, "|") {
+		return fmt.Errorf("non-canonical VERS: trailing pipe is not permitted")
+	}
+	if strings.Contains(constraints, "||") {
+		return fmt.Errorf("non-canonical VERS: consecutive pipes are not permitted")
+	}
+
+	var previous *Constraint
+	previousRaw := ""
+	for _, raw := range strings.Split(constraints, "|") {
+		operator := constraintOperator(raw)
+		version := raw[len(operator):]
+		if err := validateVersVersion(version, scheme); err != nil {
+			return err
+		}
+		constraint, err := parseConstraintWithScheme(raw, scheme)
+		if err != nil {
+			return err
+		}
+		if requireCanonicalOrder && previous != nil {
+			order := CompareWithScheme(previous.Version, constraint.Version, scheme)
+			if order > 0 || (order == 0 && previousRaw > raw) {
+				return fmt.Errorf("non-canonical VERS: constraints are not sorted by version")
+			}
+		}
+		previous, previousRaw = constraint, raw
+	}
+	return nil
+}
+
+func validateVersVersion(version, scheme string) error {
+	for i := 0; i < len(version); i++ {
+		if version[i] != '%' {
+			continue
+		}
+		if i+2 >= len(version) || !isASCIIHex(version[i+1]) || !isASCIIHex(version[i+2]) {
+			return fmt.Errorf("non-canonical VERS: invalid percent-encoding in version")
+		}
+		if isLowerASCIIHex(version[i+1]) || isLowerASCIIHex(version[i+2]) {
+			return fmt.Errorf("non-canonical VERS: percent-encoding in version is not canonical")
+		}
+		i += 2
+	}
+
+	if scheme != schemeDatetime {
+		return nil
+	}
+	if strings.Contains(version, "%3A") {
+		return fmt.Errorf("non-canonical VERS: datetime time colons must be unencoded")
+	}
+	decoded, err := url.PathUnescape(version)
+	if err != nil {
+		return fmt.Errorf("non-canonical VERS: invalid percent-encoding in version")
+	}
+	if len(decoded) > len("2006-01-02") && decoded[len("2006-01-02")] == 't' || strings.HasSuffix(decoded, "z") {
+		return fmt.Errorf("non-canonical VERS: datetime must use uppercase T and Z")
+	}
+	return nil
+}
+
+func isASCIIHex(c byte) bool {
+	return isASCIIDigit(c) || c >= 'A' && c <= 'F' || isLowerASCIIHex(c)
+}
+
+func isLowerASCIIHex(c byte) bool {
+	return c >= 'a' && c <= 'f'
 }
 
 // ParseNative parses a native package manager version range into a Range.
@@ -175,6 +258,7 @@ func sortConstraintsByVersion(constraints []constraintWithVersion, scheme string
 }
 
 var versMetaEncoder = strings.NewReplacer(
+	"%", "%25",
 	"|", "%7C",
 	">", "%3E",
 	"<", "%3C",
@@ -202,6 +286,9 @@ func normalizeVersion(version, scheme string) string {
 
 	switch scheme {
 	case schemeNPM, schemeCargo, schemeNuGet, schemeComposer, schemePub:
+		if !validSemverLike(version) {
+			return version
+		}
 		// These schemes use semver, normalize to 3 parts
 		switch dots {
 		case 0:
