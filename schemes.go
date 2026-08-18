@@ -23,6 +23,171 @@ func compareSemver(a, b string) int {
 	return compareSemverPrereleaseStrings(va.pre, vb.pre)
 }
 
+func compareNPM(a, b string) int {
+	return compareSemver(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
+func compareCargo(a, b string) int {
+	comparison := compareSemver(a, b)
+	if comparison != 0 {
+		return comparison
+	}
+	return compareCargoBuild(semverBuild(a), semverBuild(b))
+}
+
+func semverBuild(version string) string {
+	if index := strings.IndexByte(version, '+'); index >= 0 {
+		return version[index+1:]
+	}
+	return ""
+}
+
+func compareCargoBuild(a, b string) int {
+	if a == b {
+		return 0
+	}
+	if a == "" {
+		return -1
+	}
+	if b == "" {
+		return 1
+	}
+
+	left := strings.Split(a, ".")
+	right := strings.Split(b, ".")
+	for index := 0; index < len(left) && index < len(right); index++ {
+		if comparison := compareCargoBuildIdentifier(left[index], right[index]); comparison != 0 {
+			return comparison
+		}
+	}
+	return cmpInt(len(left), len(right))
+}
+
+func compareCargoBuildIdentifier(a, b string) int {
+	aNumeric, bNumeric := isDigits(a), isDigits(b)
+	if aNumeric != bNumeric {
+		if aNumeric {
+			return -1
+		}
+		return 1
+	}
+	if !aNumeric {
+		return cmpString(a, b)
+	}
+	left, right := trimLeadingZeros(a), trimLeadingZeros(b)
+	if comparison := cmpInt(len(left), len(right)); comparison != 0 {
+		return comparison
+	}
+	if comparison := cmpString(left, right); comparison != 0 {
+		return comparison
+	}
+	return cmpInt(len(a), len(b))
+}
+
+func compareGo(a, b string) int {
+	if !strings.HasPrefix(a, "v") && !strings.HasPrefix(b, "v") {
+		return compareSemver(a, b)
+	}
+	left, leftOK := parseGoVersion(a)
+	right, rightOK := parseGoVersion(b)
+	if !leftOK || !rightOK {
+		switch {
+		case leftOK:
+			return 1
+		case rightOK:
+			return -1
+		default:
+			return 0
+		}
+	}
+	for index := range left.core {
+		if comparison := cmpNumStr(left.core[index], right.core[index]); comparison != 0 {
+			return comparison
+		}
+	}
+	return compareSemverPrereleaseStrings(left.pre, right.pre)
+}
+
+func parseGoVersion(version string) (semverValue, bool) {
+	if len(version) < 2 || version[0] != 'v' {
+		return semverValue{}, false
+	}
+	version = version[1:]
+	coreEnd := strings.IndexAny(version, "-+")
+	if coreEnd < 0 {
+		coreEnd = len(version)
+	}
+	core := strings.Split(version[:coreEnd], ".")
+	if len(core) > 3 || !validGoCore(core) {
+		return semverValue{}, false
+	}
+	if len(core) < 3 && coreEnd != len(version) {
+		return semverValue{}, false
+	}
+	for len(core) < 3 {
+		core = append(core, "0")
+	}
+
+	parsed := semverValue{core: [3]string{core[0], core[1], core[2]}}
+	remainder := version[coreEnd:]
+	if strings.HasPrefix(remainder, "-") {
+		remainder = remainder[1:]
+		preEnd := strings.IndexByte(remainder, '+')
+		if preEnd < 0 {
+			preEnd = len(remainder)
+		}
+		parsed.pre = remainder[:preEnd]
+		if !validGoIdentifiers(parsed.pre, false) {
+			return semverValue{}, false
+		}
+		remainder = remainder[preEnd:]
+	}
+	if strings.HasPrefix(remainder, "+") {
+		if !validGoIdentifiers(remainder[1:], true) {
+			return semverValue{}, false
+		}
+		remainder = ""
+	}
+	return parsed, remainder == ""
+}
+
+func validGoCore(parts []string) bool {
+	if len(parts) == 0 {
+		return false
+	}
+	for _, part := range parts {
+		if !isDigits(part) || len(part) > 1 && part[0] == '0' {
+			return false
+		}
+	}
+	return true
+}
+
+func validGoIdentifiers(value string, build bool) bool {
+	if value == "" {
+		return false
+	}
+	for _, identifier := range strings.Split(value, ".") {
+		if identifier == "" || !validGoIdentifier(identifier) {
+			return false
+		}
+		if !build && len(identifier) > 1 && identifier[0] == '0' && isDigits(identifier) {
+			return false
+		}
+	}
+	return true
+}
+
+func validGoIdentifier(identifier string) bool {
+	for index := range len(identifier) {
+		character := identifier[index]
+		if !isASCIIAlnum(character) && character != '-' {
+			return false
+		}
+	}
+	return true
+}
+
 func parseSemverValue(s string) (semverValue, bool) {
 	var v semverValue
 	i := 0

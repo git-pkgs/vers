@@ -68,6 +68,23 @@ func TestNormalizeComposerAndPubVersions(t *testing.T) {
 	}
 }
 
+func TestComposerComparisonNormalizesStabilityNumbers(t *testing.T) {
+	tests := []struct {
+		left, right string
+		want        int
+	}{
+		{left: "1.25.0-beta2.1", right: "1.25.0-b.3", want: -1},
+		{left: "1.25.0-beta2.1", right: "1.25.0-b.2.1", want: 0},
+		{left: "1.25.0beta2.1", right: "1.25.0-b2.1", want: 0},
+		{left: "dev-main", right: "1.0.0", want: -1},
+	}
+	for _, test := range tests {
+		if got := CompareWithScheme(test.left, test.right, schemeComposer); got != test.want {
+			t.Errorf("CompareWithScheme(%q, %q, composer) = %d, want %d", test.left, test.right, got, test.want)
+		}
+	}
+}
+
 func TestComposerAndPubVersRoundTrip(t *testing.T) {
 	tests := []struct {
 		constraint string
