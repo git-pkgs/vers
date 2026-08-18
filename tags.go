@@ -3,8 +3,9 @@ package vers
 import "strings"
 
 // TagCandidates returns possible repository tag spellings for a version. It
-// preserves the supplied spelling, adds its scheme-normalized form, and adds or
-// removes a leading v for numeric versions. Duplicate candidates are omitted.
+// trims surrounding whitespace, preserves the remaining spelling, adds its
+// scheme-normalized form, and adds or removes a leading v for numeric versions.
+// Duplicate candidates are omitted.
 func TagCandidates(version, scheme string) ([]string, error) {
 	version = strings.TrimSpace(version)
 	normalized, err := normalizeTagVersion(version, scheme)
