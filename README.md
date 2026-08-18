@@ -124,6 +124,20 @@ vers.ValidWithScheme("1:2.3.4-1", "deb") // true
 v, _ = vers.NormalizeWithScheme("01!02.0RC1", "pypi") // "1!2.0rc1"
 ```
 
+### Find a Baseline Version and Repository Tags
+
+`MinimumVersion` returns an inclusive lower bound only when that exact version
+is part of the range. `TagCandidates` trims surrounding whitespace, preserves
+the remaining spelling, adds its scheme-normalized form, and tries the common
+optional `v` prefix.
+
+```go
+r, _ := vers.ParseNative("^1.2", "npm")
+baseline, ok := r.MinimumVersion() // "1.2", true
+tags, _ := vers.TagCandidates(baseline, "npm")
+// 1.2, v1.2, 1.2.0, v1.2.0
+```
+
 ### Create Ranges Programmatically
 
 ```go

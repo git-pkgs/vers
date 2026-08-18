@@ -99,6 +99,41 @@ func (r *Range) ExactVersion() (string, bool) {
 	return interval.Min, true
 }
 
+// MinimumVersion returns the lowest version included by the range when that
+// version is represented by an inclusive lower bound. It returns false for an
+// unbounded range, an exclusive lower bound, or a lower bound excluded from the
+// range.
+func (r *Range) MinimumVersion() (string, bool) {
+	if r == nil {
+		return "", false
+	}
+
+	cmp := compareFuncFor(r.Scheme)
+	minimum := ""
+	found := false
+	for _, interval := range r.Intervals {
+		if interval.isEmptyCmp(cmp) {
+			continue
+		}
+		if interval.Min == "" {
+			return "", false
+		}
+		if interval.Max != "" && cmp(interval.Min, interval.Max) == 0 &&
+			interval.MinInclusive && interval.MaxInclusive &&
+			!r.Contains(interval.Min) {
+			continue
+		}
+		if !found || cmp(interval.Min, minimum) < 0 {
+			minimum = interval.Min
+			found = true
+		}
+	}
+	if !found || !r.Contains(minimum) {
+		return "", false
+	}
+	return minimum, true
+}
+
 // Union returns a new Range that is the union of this range and another.
 func (r *Range) Union(other *Range) *Range {
 	if r.IsEmpty() {
