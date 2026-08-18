@@ -6,7 +6,7 @@
       "test_group": "recommended",
       "test_type": "containment",
       "input": {
-        "vers": "vers:composer/*",
+        "vers": "vers:composer/\u003e=0.0.0.0-dev",
         "version": "0.0.0.0-dev"
       },
       "expected_output": true
@@ -132,14 +132,14 @@
       "expected_output": false
     },
     {
-      "description": "composer/semver range \"\u003e=dev-master\" contains \"dev-master\".",
+      "description": "composer/semver range \"\u003e=dev-master\" excludes \"dev-master\".",
       "test_group": "recommended",
       "test_type": "containment",
       "input": {
         "vers": "vers:composer/\u003e=dev-master",
         "version": "dev-master"
       },
-      "expected_output": true
+      "expected_output": false
     },
     {
       "description": "composer/semver range \"dev-master\" contains \"dev-master\".",

@@ -38,7 +38,13 @@ func (r *Range) Contains(version string) bool {
 
 	// Check exclusions first
 	for _, exc := range r.Exclusions {
-		if scheme == schemePyPI && pep440SpecifierEqual(version, exc) || scheme != schemePyPI && cmp(version, exc) == 0 {
+		excluded := cmp(version, exc) == 0
+		if scheme == schemePyPI {
+			excluded = pep440SpecifierEqual(version, exc)
+		} else if scheme == schemeComposer && (isComposerBranchVersion(version) || isComposerBranchVersion(exc)) {
+			excluded = version == exc
+		}
+		if excluded {
 			return false
 		}
 	}
@@ -46,8 +52,11 @@ func (r *Range) Contains(version string) bool {
 	// Check if version is in any interval
 	for _, interval := range r.Intervals {
 		contains := interval.containsCmp(version, cmp)
-		if scheme == schemePyPI {
+		switch scheme {
+		case schemePyPI:
 			contains = pypiIntervalContains(interval, version)
+		case schemeComposer:
+			contains = composerIntervalContains(interval, version)
 		}
 		if contains && (scheme == schemeNPM || scheme == schemeCargo) && !semverIntervalAllowsPrerelease(interval, version) {
 			contains = false
@@ -57,6 +66,23 @@ func (r *Range) Contains(version string) bool {
 		}
 	}
 
+	return false
+}
+
+func composerIntervalContains(interval Interval, version string) bool {
+	candidateIsBranch := isComposerBranchVersion(version)
+	minimumIsBranch := isComposerBranchVersion(interval.Min)
+	maximumIsBranch := isComposerBranchVersion(interval.Max)
+	if !candidateIsBranch && !minimumIsBranch && !maximumIsBranch {
+		return interval.containsCmp(version, compareComposer)
+	}
+	if interval.IsUnbounded() {
+		return true
+	}
+	if candidateIsBranch && minimumIsBranch && maximumIsBranch &&
+		interval.MinInclusive && interval.MaxInclusive && interval.Min == interval.Max {
+		return version == interval.Min
+	}
 	return false
 }
 

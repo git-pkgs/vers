@@ -25,17 +25,20 @@ const (
 )
 
 type sourceSpec struct {
-	name            string
-	scheme          string
-	repository      string
-	commit          string
-	license         string
-	localPath       string
-	sourceFiles     []string
-	outputFile      string
-	extract         func(map[string]string) ([]comparison, error)
-	rangeOutputFile string
-	extractRanges   func(map[string]string) ([]nativeRangeAssertion, error)
+	name                     string
+	scheme                   string
+	repository               string
+	commit                   string
+	license                  string
+	localPath                string
+	sourceFiles              []string
+	outputFile               string
+	extract                  func(map[string]string) ([]comparison, error)
+	rangeOutputFile          string
+	extractRanges            func(map[string]string) ([]nativeRangeAssertion, error)
+	generatedRangeOutputFile string
+	referenceRuntimes        []string
+	evaluateRanges           rangeEvaluator
 }
 
 type comparison struct {
@@ -50,6 +53,13 @@ type nativeRangeAssertion struct {
 	version     string
 	contains    bool
 }
+
+type containmentQuery struct {
+	Range   string `json:"range"`
+	Version string `json:"version"`
+}
+
+type rangeEvaluator func(string, []containmentQuery) ([]bool, error)
 
 type testFile struct {
 	Schema string     `json:"$schema"`
@@ -95,6 +105,8 @@ var sources = []sourceSpec{
 		},
 		outputFile: "npm_version_cmp_test.json", extract: extractNodeSemver,
 		rangeOutputFile: "npm_range_reference_test.json", extractRanges: extractNodeSemverRanges,
+		generatedRangeOutputFile: "npm_range_generated_test.json",
+		referenceRuntimes:        []string{"node"}, evaluateRanges: evaluateNodeSemver,
 	},
 	{
 		name: "packaging", scheme: "pypi",
@@ -103,6 +115,8 @@ var sources = []sourceSpec{
 		localPath: "pypa/packaging", sourceFiles: []string{"tests/test_version.py", "tests/test_specifiers.py"},
 		outputFile: "pypi_version_cmp_test.json", extract: extractPyPI,
 		rangeOutputFile: "pypi_range_reference_test.json", extractRanges: extractPyPIRanges,
+		generatedRangeOutputFile: "pypi_range_generated_test.json",
+		referenceRuntimes:        []string{"python3"}, evaluateRanges: evaluatePyPI,
 	},
 	{
 		name: "RubyGems", scheme: "gem",
@@ -113,6 +127,8 @@ var sources = []sourceSpec{
 		},
 		outputFile: "gem_version_cmp_test.json", extract: extractRubyGems,
 		rangeOutputFile: "gem_range_reference_test.json", extractRanges: extractRubyGemsRanges,
+		generatedRangeOutputFile: "gem_range_generated_test.json",
+		referenceRuntimes:        []string{"ruby"}, evaluateRanges: evaluateRubyGems,
 	},
 	{
 		name: "composer/semver", scheme: "composer",
@@ -121,6 +137,8 @@ var sources = []sourceSpec{
 		localPath: "composer/semver", sourceFiles: []string{"tests/ComparatorTest.php", "tests/VersionParserTest.php"},
 		outputFile: "composer_version_cmp_test.json", extract: extractComposer,
 		rangeOutputFile: "composer_range_reference_test.json", extractRanges: extractComposerRanges,
+		generatedRangeOutputFile: "composer_range_generated_test.json",
+		referenceRuntimes:        []string{"php"}, evaluateRanges: evaluateComposer,
 	},
 	{
 		name: "pub_semver", scheme: "pub",
@@ -134,6 +152,8 @@ var sources = []sourceSpec{
 		},
 		outputFile: "pub_version_cmp_test.json", extract: extractPub,
 		rangeOutputFile: "pub_range_reference_test.json", extractRanges: extractPubRanges,
+		generatedRangeOutputFile: "pub_range_generated_test.json",
+		referenceRuntimes:        []string{"dart"}, evaluateRanges: evaluatePub,
 	},
 	{
 		name: "semver", scheme: "cargo",
@@ -142,6 +162,8 @@ var sources = []sourceSpec{
 		localPath: "dtolnay/semver", sourceFiles: []string{"tests/test_version.rs", "tests/test_version_req.rs"},
 		outputFile: "cargo_version_cmp_test.json", extract: extractCargo,
 		rangeOutputFile: "cargo_range_reference_test.json", extractRanges: extractCargoRanges,
+		generatedRangeOutputFile: "cargo_range_generated_test.json",
+		referenceRuntimes:        []string{"rustc"}, evaluateRanges: evaluateCargo,
 	},
 	{
 		name: "maven-artifact", scheme: "maven",
@@ -152,6 +174,8 @@ var sources = []sourceSpec{
 			"compat/maven-artifact/src/test/java/org/apache/maven/artifact/versioning/VersionRangeTest.java",
 		},
 		rangeOutputFile: "maven_range_reference_test.json", extractRanges: extractMavenRanges,
+		generatedRangeOutputFile: "maven_range_generated_test.json",
+		referenceRuntimes:        []string{"javac", "java"}, evaluateRanges: evaluateMaven,
 	},
 	{
 		name: "dpkg", scheme: "deb",
@@ -209,34 +233,14 @@ func run(sourceRoot, outputRoot string) error {
 	}}
 
 	for _, source := range sources {
-		files, err := readSource(source, sourceRoot)
+		files, checkout, cleanup, err := readSource(source, sourceRoot)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", source.name, err)
 		}
-		var generatedFiles []string
-		if source.extract != nil {
-			comparisons, err := source.extract(files)
-			if err != nil {
-				return fmt.Errorf("extract %s comparisons: %w", source.name, err)
-			}
-			if err := writeJSON(filepath.Join(testsDir, source.outputFile), buildTestFile(source, comparisons)); err != nil {
-				return err
-			}
-			generatedFiles = append(generatedFiles, filepath.ToSlash(filepath.Join("tests", source.outputFile)))
-		}
-		if source.extractRanges != nil {
-			assertions, err := source.extractRanges(files)
-			if err != nil {
-				return fmt.Errorf("extract %s ranges: %w", source.name, err)
-			}
-			file, err := buildRangeTestFile(source, assertions)
-			if err != nil {
-				return fmt.Errorf("build %s ranges: %w", source.name, err)
-			}
-			if err := writeJSON(filepath.Join(testsDir, source.rangeOutputFile), file); err != nil {
-				return err
-			}
-			generatedFiles = append(generatedFiles, filepath.ToSlash(filepath.Join("tests", source.rangeOutputFile)))
+		generatedFiles, err := harvestSource(source, files, checkout, testsDir)
+		cleanup()
+		if err != nil {
+			return err
 		}
 		provenance.Sources = append(provenance.Sources, provenanceSource{
 			Repository: source.repository, Commit: source.commit, License: source.license,
@@ -247,29 +251,109 @@ func run(sourceRoot, outputRoot string) error {
 	return writeJSON(filepath.Join(outputRoot, "provenance.json"), provenance)
 }
 
-func readSource(source sourceSpec, sourceRoot string) (map[string]string, error) {
+func harvestSource(source sourceSpec, files map[string]string, checkout, testsDir string) ([]string, error) {
+	var generatedFiles []string
+	var comparisons []comparison
+	if source.extract != nil {
+		var err error
+		comparisons, err = source.extract(files)
+		if err != nil {
+			return nil, fmt.Errorf("extract %s comparisons: %w", source.name, err)
+		}
+		if err := writeJSON(filepath.Join(testsDir, source.outputFile), buildTestFile(source, comparisons)); err != nil {
+			return nil, err
+		}
+		generatedFiles = append(generatedFiles, filepath.ToSlash(filepath.Join("tests", source.outputFile)))
+	}
+
+	var assertions []nativeRangeAssertion
+	if source.extractRanges != nil {
+		var err error
+		assertions, err = source.extractRanges(files)
+		if err != nil {
+			return nil, fmt.Errorf("extract %s ranges: %w", source.name, err)
+		}
+		file, err := buildRangeTestFile(source, assertions)
+		if err != nil {
+			return nil, fmt.Errorf("build %s ranges: %w", source.name, err)
+		}
+		if err := writeJSON(filepath.Join(testsDir, source.rangeOutputFile), file); err != nil {
+			return nil, err
+		}
+		generatedFiles = append(generatedFiles, filepath.ToSlash(filepath.Join("tests", source.rangeOutputFile)))
+	}
+
+	if source.evaluateRanges != nil {
+		generatedFilename := filepath.ToSlash(filepath.Join("tests", source.generatedRangeOutputFile))
+		generatedFiles = append(generatedFiles, generatedFilename)
+		if missing := missingRuntime(source.referenceRuntimes); missing != "" {
+			fmt.Fprintf(os.Stderr, "warning: skip %s generated containment tests: %s not found on PATH\n", source.name, missing)
+			return generatedFiles, nil
+		}
+		queries := crossContainmentQueries(assertions, comparisons)
+		results, err := source.evaluateRanges(checkout, queries)
+		if err != nil {
+			return nil, fmt.Errorf("evaluate %s ranges: %w", source.name, err)
+		}
+		generatedAssertions, err := applyContainmentResults(queries, results)
+		if err != nil {
+			return nil, fmt.Errorf("evaluate %s ranges: %w", source.name, err)
+		}
+		file, err := buildRangeTestFile(source, generatedAssertions)
+		if err != nil {
+			return nil, fmt.Errorf("build generated %s ranges: %w", source.name, err)
+		}
+		if err := writeJSON(filepath.Join(testsDir, source.generatedRangeOutputFile), file); err != nil {
+			return nil, err
+		}
+	}
+
+	return generatedFiles, nil
+}
+
+func readSource(source sourceSpec, sourceRoot string) (map[string]string, string, func(), error) {
 	if sourceRoot != "" {
-		return readGitFiles(filepath.Join(sourceRoot, filepath.FromSlash(source.localPath)), source.commit, source.sourceFiles)
+		repository := filepath.Join(sourceRoot, filepath.FromSlash(source.localPath))
+		files, err := readGitFiles(repository, source.commit, source.sourceFiles)
+		if err != nil {
+			return nil, "", func() {}, err
+		}
+		checkout, cleanup, err := referenceCheckout(repository, source.commit, source.evaluateRanges != nil)
+		return files, checkout, cleanup, err
 	}
 
 	directory, err := os.MkdirTemp("", "vers-harvest-")
 	if err != nil {
-		return nil, err
+		return nil, "", func() {}, err
 	}
-	defer func() {
+	cleanup := func() {
 		_ = os.RemoveAll(directory)
-	}()
+	}
 
 	if err := runGit(directory, "init", "--quiet"); err != nil {
-		return nil, err
+		cleanup()
+		return nil, "", func() {}, err
 	}
 	if err := runGit(directory, "remote", "add", "origin", source.repository); err != nil {
-		return nil, err
+		cleanup()
+		return nil, "", func() {}, err
 	}
 	if err := runGit(directory, "fetch", "--quiet", "--depth=1", "origin", source.commit); err != nil {
-		return nil, err
+		cleanup()
+		return nil, "", func() {}, err
 	}
-	return readGitFiles(directory, "FETCH_HEAD", source.sourceFiles)
+	if source.evaluateRanges != nil {
+		if err := runGit(directory, "checkout", "--quiet", "--detach", "FETCH_HEAD"); err != nil {
+			cleanup()
+			return nil, "", func() {}, err
+		}
+	}
+	files, err := readGitFiles(directory, "FETCH_HEAD", source.sourceFiles)
+	if err != nil {
+		cleanup()
+		return nil, "", func() {}, err
+	}
+	return files, directory, cleanup, nil
 }
 
 func readGitFiles(repository, revision string, filenames []string) (map[string]string, error) {
@@ -365,6 +449,7 @@ func buildTestFile(source sourceSpec, comparisons []comparison) testFile {
 func buildRangeTestFile(source sourceSpec, assertions []nativeRangeAssertion) (testFile, error) {
 	tests := make([]testCase, 0, len(assertions))
 	seen := make(map[string]bool, len(assertions))
+	expectedByInput := make(map[string]bool, len(assertions))
 	for _, assertion := range assertions {
 		r, err := vers.ParseNative(assertion.nativeRange, source.scheme)
 		if err != nil {
@@ -380,7 +465,12 @@ func buildRangeTestFile(source sourceSpec, assertions []nativeRangeAssertion) (t
 			containmentRange.Scheme = source.scheme
 		}
 		versURI := vers.ToVersString(&containmentRange, source.scheme)
-		key := versURI + "\x00" + assertion.version + "\x00" + strconv.FormatBool(assertion.contains)
+		inputKey := versURI + "\x00" + assertion.version
+		if expected, ok := expectedByInput[inputKey]; ok && expected != assertion.contains {
+			return testFile{}, fmt.Errorf("native ranges disagree after conversion for %q and version %q", versURI, assertion.version)
+		}
+		expectedByInput[inputKey] = assertion.contains
+		key := inputKey + "\x00" + strconv.FormatBool(assertion.contains)
 		if seen[key] {
 			continue
 		}
