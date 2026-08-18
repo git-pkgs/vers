@@ -189,6 +189,116 @@ func TestRangeExactVersion(t *testing.T) {
 	}
 }
 
+func TestRangeMinimumVersion(t *testing.T) {
+	tests := []struct {
+		name        string
+		rangeValue  *Range
+		wantVersion string
+		wantOK      bool
+	}{
+		{name: "nil range"},
+		{name: "empty range", rangeValue: Empty()},
+		{name: "unbounded range", rangeValue: Unbounded()},
+		{
+			name:        "inclusive lower bound",
+			rangeValue:  NewRange([]Interval{NewInterval("1.2.3", "2.0.0", true, false)}),
+			wantVersion: "1.2.3",
+			wantOK:      true,
+		},
+		{
+			name:       "exclusive lower bound",
+			rangeValue: NewRange([]Interval{NewInterval("1.2.3", "2.0.0", false, false)}),
+		},
+		{
+			name: "excluded lower bound",
+			rangeValue: &Range{
+				Intervals:  []Interval{NewInterval("1.2.3", "2.0.0", true, false)},
+				Exclusions: []string{"1.2.3"},
+			},
+		},
+		{
+			name: "excluded exact interval before included interval",
+			rangeValue: &Range{
+				Intervals: []Interval{
+					ExactInterval("1.0.0"),
+					ExactInterval("2.0.0"),
+				},
+				Exclusions: []string{"1.0.0"},
+			},
+			wantVersion: "2.0.0",
+			wantOK:      true,
+		},
+		{
+			name: "unsorted intervals",
+			rangeValue: NewRange([]Interval{
+				ExactInterval("2.0.0"),
+				ExactInterval("1.0.0"),
+			}),
+			wantVersion: "1.0.0",
+			wantOK:      true,
+		},
+		{
+			name: "equivalent inclusive and exclusive bounds",
+			rangeValue: NewRange([]Interval{
+				NewInterval("1.0.0", "2.0.0", false, false),
+				NewInterval("1.0.0", "1.5.0", true, false),
+			}),
+			wantVersion: "1.0.0",
+			wantOK:      true,
+		},
+		{
+			name: "scheme equivalent bounds",
+			rangeValue: &Range{
+				Intervals: []Interval{
+					ExactInterval("2.0"),
+					ExactInterval("1.0.0"),
+				},
+				Scheme: "pypi",
+			},
+			wantVersion: "1.0.0",
+			wantOK:      true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			gotVersion, gotOK := test.rangeValue.MinimumVersion()
+			if gotVersion != test.wantVersion || gotOK != test.wantOK {
+				t.Errorf("MinimumVersion() = (%q, %v), want (%q, %v)",
+					gotVersion, gotOK, test.wantVersion, test.wantOK)
+			}
+		})
+	}
+}
+
+func TestRangeMinimumVersionFromNativeConstraint(t *testing.T) {
+	tests := []struct {
+		constraint  string
+		scheme      string
+		wantVersion string
+		wantOK      bool
+	}{
+		{constraint: "^1.2.3", scheme: "npm", wantVersion: "1.2.3", wantOK: true},
+		{constraint: "1.2.3 || 2.0.0", scheme: "npm", wantVersion: "1.2.3", wantOK: true},
+		{constraint: "<3", scheme: "npm"},
+		{constraint: ">=1.0.0,!=1.0.0", scheme: "pypi"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.scheme+" "+test.constraint, func(t *testing.T) {
+			rangeValue, err := ParseNative(test.constraint, test.scheme)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotVersion, gotOK := rangeValue.MinimumVersion()
+			if gotVersion != test.wantVersion || gotOK != test.wantOK {
+				t.Errorf("MinimumVersion() = (%q, %v), want (%q, %v)",
+					gotVersion, gotOK, test.wantVersion, test.wantOK)
+			}
+		})
+	}
+}
+
 func TestRangeUnion(t *testing.T) {
 	tests := []struct {
 		name    string
