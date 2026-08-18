@@ -12,7 +12,7 @@ var (
 	composerNumericBranchRegex = regexp.MustCompile(`(?i)^v?\d+(?:\.\d+)*\.x-dev$`)
 	composerOrRegex            = regexp.MustCompile(`\s*\|\|?\s*`)
 	composerStabilityFlagRegex = regexp.MustCompile(`(?i)^(.*?)@(dev|alpha|beta|rc|stable)$`)
-	composerVersionRegex       = regexp.MustCompile(`(?i)^v?([0-9]+(?:\.[0-9]+){0,3})(?:[-._]?([a-z]+)(?:[.-]?([0-9]+))?)?(?:\+[^\s]+)?$`)
+	composerVersionRegex       = regexp.MustCompile(`(?i)^v?([0-9]+(?:\.[0-9]+){0,3})(?:[-._]?([a-z]+)(?:[.-]?([0-9]+(?:[.-][0-9]+)*))?)?(?:\+[^\s]+)?$`)
 	pubVersionPrefixRegex      = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?`)
 )
 
@@ -412,6 +412,14 @@ func parseComposerVersion(version string) (composerVersion, bool) {
 func compareComposer(a, b string) int {
 	left, leftOK := parseComposerVersion(a)
 	right, rightOK := parseComposerVersion(b)
+	leftBranch := strings.HasPrefix(strings.ToLower(a), "dev-")
+	rightBranch := strings.HasPrefix(strings.ToLower(b), "dev-")
+	if leftBranch != rightBranch {
+		if leftBranch {
+			return -1
+		}
+		return 1
+	}
 	if !leftOK || !rightOK {
 		return cmpString(strings.ToLower(a), strings.ToLower(b))
 	}
@@ -423,7 +431,25 @@ func compareComposer(a, b string) int {
 	if left.stability != right.stability {
 		return cmpInt(left.stability, right.stability)
 	}
-	return cmpNumStr(left.number, right.number)
+	return compareComposerNumbers(left.number, right.number)
+}
+
+func compareComposerNumbers(a, b string) int {
+	left := strings.FieldsFunc(a, func(character rune) bool { return character == '.' || character == '-' })
+	right := strings.FieldsFunc(b, func(character rune) bool { return character == '.' || character == '-' })
+	for index := 0; index < len(left) || index < len(right); index++ {
+		var leftPart, rightPart string
+		if index < len(left) {
+			leftPart = left[index]
+		}
+		if index < len(right) {
+			rightPart = right[index]
+		}
+		if comparison := cmpNumStr(leftPart, rightPart); comparison != 0 {
+			return comparison
+		}
+	}
+	return 0
 }
 
 // validComposerVersion reports whether a version is a numeric Composer version

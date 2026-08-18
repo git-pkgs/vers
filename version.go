@@ -330,6 +330,9 @@ func CompareWithScheme(a, b, scheme string) int {
 	if a == b {
 		return 0
 	}
+	if scheme == schemeGem || scheme == schemeRubyGems || scheme == schemeGo || scheme == schemeGolang {
+		return compareFuncFor(scheme)(a, b)
+	}
 	if a == "" {
 		return -1
 	}
@@ -343,8 +346,14 @@ func CompareWithScheme(a, b, scheme string) int {
 // compareFuncFor returns the version comparison function for a scheme.
 func compareFuncFor(scheme string) func(a, b string) int {
 	switch scheme {
-	case schemeSemVer, schemeNPM, schemeCargo, schemeGo, schemeGolang, schemeHex, schemeElixir, schemeNginx:
+	case schemeSemVer, schemeHex, schemeElixir, schemeNginx:
 		return compareSemver
+	case schemeNPM:
+		return compareNPM
+	case schemeCargo:
+		return compareCargo
+	case schemeGo, schemeGolang:
+		return compareGo
 	case schemeComposer:
 		return compareComposer
 	case schemePub:

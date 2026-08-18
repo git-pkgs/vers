@@ -109,7 +109,7 @@
         "type": "composer",
         "native_range": "dev-main as 2.x-dev || ^2.0"
       },
-      "expected_output": "vers:composer/>=2.0.0-dev|<3.0.0-dev|dev-main"
+      "expected_output": "vers:composer/dev-main|>=2.0.0-dev|<3.0.0-dev"
     },
     {
       "description": "Composer converts a single-pipe union.",

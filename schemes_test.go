@@ -90,7 +90,7 @@ func TestSemverSchemeComparison(t *testing.T) {
 		{"999999999999999999999999.0.0", "888888888888888888888888.0.0", 1},
 		{"1.0.0+one", "1.0.0+two", 0},
 	}
-	for _, scheme := range []string{"semver", "npm", "cargo", "go", "golang", "hex", "elixir"} {
+	for _, scheme := range []string{"semver", "npm", "hex", "elixir"} {
 		for _, tt := range tests {
 			if got := CompareWithScheme(tt.a, tt.b, scheme); got != tt.want {
 				t.Errorf("CompareWithScheme(%q, %q, %q) = %d, want %d", tt.a, tt.b, scheme, got, tt.want)
@@ -99,6 +99,28 @@ func TestSemverSchemeComparison(t *testing.T) {
 	}
 	if got := Compare("999999999999999999999999.0.0", "888888888888888888888888.0.0"); got != 1 {
 		t.Errorf("Compare() with arbitrary-width SemVer components = %d, want 1", got)
+	}
+}
+
+func TestEcosystemSemverDifferences(t *testing.T) {
+	tests := []struct {
+		scheme, a, b string
+		want         int
+	}{
+		{scheme: schemeNPM, a: "  v1.2.3+one", b: "1.2.3+two", want: 0},
+		{scheme: schemeCargo, a: "1.2.3+23", b: "1.2.3+42", want: -1},
+		{scheme: schemeCargo, a: "1.2.3", b: "1.2.3+0", want: -1},
+		{scheme: schemeCargo, a: "1.2.3+0", b: "1.2.3+00", want: -1},
+		{scheme: schemeGo, a: "bad", b: "v1-pre", want: 0},
+		{scheme: schemeGo, a: "bad", b: "v1.0.0-alpha", want: -1},
+		{scheme: schemeGo, a: "v1", b: "v1.0.0", want: 0},
+		{scheme: schemeGo, a: "1.9.9", b: "2.0.0", want: -1},
+		{scheme: schemeGolang, a: "v1.2.3+one", b: "v1.2.3+two", want: 0},
+	}
+	for _, test := range tests {
+		if got := CompareWithScheme(test.a, test.b, test.scheme); got != test.want {
+			t.Errorf("CompareWithScheme(%q, %q, %q) = %d, want %d", test.a, test.b, test.scheme, got, test.want)
+		}
 	}
 }
 
@@ -128,6 +150,7 @@ func TestGemSchemeComparison(t *testing.T) {
 		{"1.0.a10", "1.0.a2", 1},
 		{"1.0-1", "1.0.pre.1", 0},
 		{"1.0", "1.0.0", 0},
+		{"", "0", 0},
 	}
 	for _, scheme := range []string{"gem", "rubygems"} {
 		for _, tt := range tests {

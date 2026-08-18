@@ -4,14 +4,114 @@
       "repository": "https://github.com/git-pkgs/vers",
       "commit": "aca1342a0af1b6308ced629af1913ab42a66dbb5",
       "license": "MIT",
-      "source_file": "composer_pub_test.go",
+      "source_files": [
+        "composer_pub_test.go"
+      ],
       "generated_files": [
         "tests/composer_range_containment_test.json",
         "tests/composer_range_from_native_test.json",
-        "tests/composer_version_cmp_test.json",
         "tests/pub_range_containment_test.json",
-        "tests/pub_range_from_native_test.json",
+        "tests/pub_range_from_native_test.json"
+      ]
+    },
+    {
+      "repository": "https://github.com/npm/node-semver.git",
+      "commit": "6e05b7637396ac66522cff8731f07cfe0ef49a29",
+      "license": "ISC",
+      "source_files": [
+        "test/fixtures/comparisons.js",
+        "test/fixtures/equality.js"
+      ],
+      "generated_files": [
+        "tests/npm_version_cmp_test.json"
+      ]
+    },
+    {
+      "repository": "https://github.com/pypa/packaging.git",
+      "commit": "55cbf1b9426f44455fa1a9e0836f1fc082cc8452",
+      "license": "Apache-2.0 OR BSD-2-Clause",
+      "source_files": [
+        "tests/test_version.py"
+      ],
+      "generated_files": [
+        "tests/pypi_version_cmp_test.json"
+      ]
+    },
+    {
+      "repository": "https://github.com/rubygems/rubygems.git",
+      "commit": "370fe6876eec1714cd0f8824c3f19f4d368dfe7c",
+      "license": "MIT",
+      "source_files": [
+        "test/rubygems/test_gem_version.rb"
+      ],
+      "generated_files": [
+        "tests/gem_version_cmp_test.json"
+      ]
+    },
+    {
+      "repository": "https://github.com/composer/semver.git",
+      "commit": "1cbc9b575a27458074d21a3bab95b847c8de387c",
+      "license": "MIT",
+      "source_files": [
+        "tests/ComparatorTest.php"
+      ],
+      "generated_files": [
+        "tests/composer_version_cmp_test.json"
+      ]
+    },
+    {
+      "repository": "https://github.com/dart-lang/tools.git",
+      "commit": "a22c3a687dc1b35630fb34c296157d66565429cd",
+      "license": "BSD-3-Clause",
+      "source_files": [
+        "pkgs/pub_semver/test/version_test.dart"
+      ],
+      "generated_files": [
         "tests/pub_version_cmp_test.json"
+      ]
+    },
+    {
+      "repository": "https://github.com/dtolnay/semver.git",
+      "commit": "280ebcb6edac3aa4cdc545dbff8a26c5ac4861fe",
+      "license": "MIT OR Apache-2.0",
+      "source_files": [
+        "tests/test_version.rs"
+      ],
+      "generated_files": [
+        "tests/cargo_version_cmp_test.json"
+      ]
+    },
+    {
+      "repository": "https://salsa.debian.org/dpkg-team/dpkg.git",
+      "commit": "c5efef926d16a72fd9270c8efceeba8872419292",
+      "license": "GPL-2.0-or-later",
+      "source_files": [
+        "lib/dpkg/t/t-version.c"
+      ],
+      "generated_files": [
+        "tests/deb_version_cmp_test.json"
+      ]
+    },
+    {
+      "repository": "https://github.com/rpm-software-management/rpm.git",
+      "commit": "ac5062c43e2337fb43a9179f02c0cc5d7d069802",
+      "license": "GPL-2.0-or-later",
+      "source_files": [
+        "tests/rpmvercmp.at"
+      ],
+      "generated_files": [
+        "tests/rpm_version_cmp_test.json"
+      ]
+    },
+    {
+      "repository": "https://github.com/golang/mod.git",
+      "commit": "d3398d06de5fa5c71083d3d1c26f2cda73508e0f",
+      "license": "BSD-3-Clause",
+      "source_files": [
+        "semver/semver_test.go"
+      ],
+      "generated_files": [
+        "tests/go_version_cmp_test.json"
       ]
     }
   ]
