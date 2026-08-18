@@ -250,8 +250,8 @@ func TestPyPIRangeContains(t *testing.T) {
 		// constraint order reversed (as in the issue)
 		{"vers:pypi/<5.2b1|>=5.1", "6.0.3", false},
 		{"vers:pypi/<5.2b1|>=5.1", "5.1.5", true},
-		// upper bound is a release, prereleases of that release are inside
-		{"vers:pypi/>=1.0|<2.0", "2.0a1", true},
+		// An exclusive release bound excludes prereleases of that release.
+		{"vers:pypi/>=1.0|<2.0", "2.0a1", false},
 		{"vers:pypi/>=1.0|<2.0", "2.0", false},
 		{"vers:pypi/>=1.0|<2.0", "1.0", true},
 		// dev release below lower bound
@@ -477,7 +477,7 @@ func TestPyPINativeRangeContains(t *testing.T) {
 	}{
 		{">=5.1,<5.2b1", "5.1.5", true},
 		{">=5.1,<5.2b1", "6.0.3", false},
-		{">=1.0,<2.0", "2.0a1", true},
+		{">=1.0,<2.0", "2.0a1", false},
 		{">=1.0,<2.0", "2.0", false},
 	}
 	for _, tt := range tests {

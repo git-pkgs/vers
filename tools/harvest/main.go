@@ -8,11 +8,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+
+	vers "github.com/git-pkgs/vers"
 )
 
 const (
 	schemaURL            = "https://packageurl.org/schemas/vers-test.schema-0.2.json"
 	testTypeEquality     = "equality"
+	testTypeContainment  = "containment"
 	testGroupRecommended = "recommended"
 	licenseMIT           = "MIT"
 	testsPerComparison   = 2
@@ -21,15 +25,17 @@ const (
 )
 
 type sourceSpec struct {
-	name        string
-	scheme      string
-	repository  string
-	commit      string
-	license     string
-	localPath   string
-	sourceFiles []string
-	outputFile  string
-	extract     func(map[string]string) ([]comparison, error)
+	name            string
+	scheme          string
+	repository      string
+	commit          string
+	license         string
+	localPath       string
+	sourceFiles     []string
+	outputFile      string
+	extract         func(map[string]string) ([]comparison, error)
+	rangeOutputFile string
+	extractRanges   func(map[string]string) ([]nativeRangeAssertion, error)
 }
 
 type comparison struct {
@@ -39,22 +45,30 @@ type comparison struct {
 	differentOnly bool
 }
 
+type nativeRangeAssertion struct {
+	nativeRange string
+	version     string
+	contains    bool
+}
+
 type testFile struct {
 	Schema string     `json:"$schema"`
 	Tests  []testCase `json:"tests"`
 }
 
 type testCase struct {
-	Description    string          `json:"description"`
-	TestGroup      string          `json:"test_group"`
-	TestType       string          `json:"test_type"`
-	Input          comparisonInput `json:"input"`
-	ExpectedOutput any             `json:"expected_output"`
+	Description    string    `json:"description"`
+	TestGroup      string    `json:"test_group"`
+	TestType       string    `json:"test_type"`
+	Input          testInput `json:"input"`
+	ExpectedOutput any       `json:"expected_output"`
 }
 
-type comparisonInput struct {
-	InputType string   `json:"input_type"`
-	Versions  []string `json:"versions"`
+type testInput struct {
+	InputType string   `json:"input_type,omitempty"`
+	Versions  []string `json:"versions,omitempty"`
+	Vers      string   `json:"vers,omitempty"`
+	Version   string   `json:"version,omitempty"`
 }
 
 type provenanceFile struct {
@@ -74,44 +88,70 @@ var sources = []sourceSpec{
 		name: "node-semver", scheme: "npm",
 		repository: "https://github.com/npm/node-semver.git",
 		commit:     "6e05b7637396ac66522cff8731f07cfe0ef49a29", license: "ISC",
-		localPath:   "npm/node-semver",
-		sourceFiles: []string{"test/fixtures/comparisons.js", "test/fixtures/equality.js"},
-		outputFile:  "npm_version_cmp_test.json", extract: extractNodeSemver,
+		localPath: "npm/node-semver",
+		sourceFiles: []string{
+			"test/fixtures/comparisons.js", "test/fixtures/equality.js",
+			"test/fixtures/range-include.js", "test/fixtures/range-exclude.js",
+		},
+		outputFile: "npm_version_cmp_test.json", extract: extractNodeSemver,
+		rangeOutputFile: "npm_range_reference_test.json", extractRanges: extractNodeSemverRanges,
 	},
 	{
 		name: "packaging", scheme: "pypi",
 		repository: "https://github.com/pypa/packaging.git",
 		commit:     "55cbf1b9426f44455fa1a9e0836f1fc082cc8452", license: "Apache-2.0 OR BSD-2-Clause",
-		localPath: "pypa/packaging", sourceFiles: []string{"tests/test_version.py"},
+		localPath: "pypa/packaging", sourceFiles: []string{"tests/test_version.py", "tests/test_specifiers.py"},
 		outputFile: "pypi_version_cmp_test.json", extract: extractPyPI,
+		rangeOutputFile: "pypi_range_reference_test.json", extractRanges: extractPyPIRanges,
 	},
 	{
 		name: "RubyGems", scheme: "gem",
 		repository: "https://github.com/rubygems/rubygems.git",
 		commit:     "370fe6876eec1714cd0f8824c3f19f4d368dfe7c", license: licenseMIT,
-		localPath: "rubygems/rubygems", sourceFiles: []string{"test/rubygems/test_gem_version.rb"},
+		localPath: "rubygems/rubygems", sourceFiles: []string{
+			"test/rubygems/test_gem_version.rb", "test/rubygems/test_gem_requirement.rb",
+		},
 		outputFile: "gem_version_cmp_test.json", extract: extractRubyGems,
+		rangeOutputFile: "gem_range_reference_test.json", extractRanges: extractRubyGemsRanges,
 	},
 	{
 		name: "composer/semver", scheme: "composer",
 		repository: "https://github.com/composer/semver.git",
 		commit:     "1cbc9b575a27458074d21a3bab95b847c8de387c", license: licenseMIT,
-		localPath: "composer/semver", sourceFiles: []string{"tests/ComparatorTest.php"},
+		localPath: "composer/semver", sourceFiles: []string{"tests/ComparatorTest.php", "tests/VersionParserTest.php"},
 		outputFile: "composer_version_cmp_test.json", extract: extractComposer,
+		rangeOutputFile: "composer_range_reference_test.json", extractRanges: extractComposerRanges,
 	},
 	{
 		name: "pub_semver", scheme: "pub",
 		repository: "https://github.com/dart-lang/tools.git",
 		commit:     "a22c3a687dc1b35630fb34c296157d66565429cd", license: "BSD-3-Clause",
-		localPath: "dart-lang/tools", sourceFiles: []string{"pkgs/pub_semver/test/version_test.dart"},
+		localPath: "dart-lang/tools", sourceFiles: []string{
+			"pkgs/pub_semver/test/version_test.dart",
+			"pkgs/pub_semver/test/version_range_test.dart",
+			"pkgs/pub_semver/test/version_constraint_test.dart",
+			"pkgs/pub_semver/test/utils.dart",
+		},
 		outputFile: "pub_version_cmp_test.json", extract: extractPub,
+		rangeOutputFile: "pub_range_reference_test.json", extractRanges: extractPubRanges,
 	},
 	{
 		name: "semver", scheme: "cargo",
 		repository: "https://github.com/dtolnay/semver.git",
 		commit:     "280ebcb6edac3aa4cdc545dbff8a26c5ac4861fe", license: "MIT OR Apache-2.0",
-		localPath: "dtolnay/semver", sourceFiles: []string{"tests/test_version.rs"},
+		localPath: "dtolnay/semver", sourceFiles: []string{"tests/test_version.rs", "tests/test_version_req.rs"},
 		outputFile: "cargo_version_cmp_test.json", extract: extractCargo,
+		rangeOutputFile: "cargo_range_reference_test.json", extractRanges: extractCargoRanges,
+	},
+	{
+		name: "maven-artifact", scheme: "maven",
+		repository: "https://github.com/apache/maven.git",
+		commit:     "48514f63b2799844c9f8d7746f73a95123526df7", license: "Apache-2.0",
+		localPath: "apache/maven",
+		sourceFiles: []string{
+			"compat/maven-artifact/src/test/java/org/apache/maven/artifact/versioning/VersionRangeTest.java",
+		},
+		rangeOutputFile: "maven_range_reference_test.json", extractRanges: extractMavenRanges,
 	},
 	{
 		name: "dpkg", scheme: "deb",
@@ -173,16 +213,34 @@ func run(sourceRoot, outputRoot string) error {
 		if err != nil {
 			return fmt.Errorf("read %s: %w", source.name, err)
 		}
-		comparisons, err := source.extract(files)
-		if err != nil {
-			return fmt.Errorf("extract %s: %w", source.name, err)
+		var generatedFiles []string
+		if source.extract != nil {
+			comparisons, err := source.extract(files)
+			if err != nil {
+				return fmt.Errorf("extract %s comparisons: %w", source.name, err)
+			}
+			if err := writeJSON(filepath.Join(testsDir, source.outputFile), buildTestFile(source, comparisons)); err != nil {
+				return err
+			}
+			generatedFiles = append(generatedFiles, filepath.ToSlash(filepath.Join("tests", source.outputFile)))
 		}
-		if err := writeJSON(filepath.Join(testsDir, source.outputFile), buildTestFile(source, comparisons)); err != nil {
-			return err
+		if source.extractRanges != nil {
+			assertions, err := source.extractRanges(files)
+			if err != nil {
+				return fmt.Errorf("extract %s ranges: %w", source.name, err)
+			}
+			file, err := buildRangeTestFile(source, assertions)
+			if err != nil {
+				return fmt.Errorf("build %s ranges: %w", source.name, err)
+			}
+			if err := writeJSON(filepath.Join(testsDir, source.rangeOutputFile), file); err != nil {
+				return err
+			}
+			generatedFiles = append(generatedFiles, filepath.ToSlash(filepath.Join("tests", source.rangeOutputFile)))
 		}
 		provenance.Sources = append(provenance.Sources, provenanceSource{
 			Repository: source.repository, Commit: source.commit, License: source.license,
-			SourceFiles: source.sourceFiles, GeneratedFiles: []string{filepath.ToSlash(filepath.Join("tests", source.outputFile))},
+			SourceFiles: source.sourceFiles, GeneratedFiles: generatedFiles,
 		})
 	}
 
@@ -266,7 +324,7 @@ func buildTestFile(source sourceSpec, comparisons []comparison) testFile {
 			appendTest(testCase{
 				Description: fmt.Sprintf("%s treats %q and %q as different.", source.name, left, right),
 				TestGroup:   testGroupRecommended, TestType: testTypeEquality,
-				Input:          comparisonInput{InputType: source.scheme, Versions: []string{left, right}},
+				Input:          testInput{InputType: source.scheme, Versions: []string{left, right}},
 				ExpectedOutput: false,
 			})
 			continue
@@ -290,18 +348,57 @@ func buildTestFile(source sourceSpec, comparisons []comparison) testFile {
 
 		appendTest(testCase{
 			Description: description, TestGroup: testGroupRecommended, TestType: testType,
-			Input: comparisonInput{InputType: source.scheme, Versions: input}, ExpectedOutput: expected,
+			Input: testInput{InputType: source.scheme, Versions: input}, ExpectedOutput: expected,
 		})
 		if result != 0 {
 			appendTest(testCase{
 				Description: fmt.Sprintf("%s treats %q and %q as different.", source.name, item.left, item.right),
 				TestGroup:   testGroupRecommended, TestType: testTypeEquality,
-				Input:          comparisonInput{InputType: source.scheme, Versions: []string{item.left, item.right}},
+				Input:          testInput{InputType: source.scheme, Versions: []string{item.left, item.right}},
 				ExpectedOutput: false,
 			})
 		}
 	}
 	return testFile{Schema: schemaURL, Tests: tests}
+}
+
+func buildRangeTestFile(source sourceSpec, assertions []nativeRangeAssertion) (testFile, error) {
+	tests := make([]testCase, 0, len(assertions))
+	seen := make(map[string]bool, len(assertions))
+	for _, assertion := range assertions {
+		r, err := vers.ParseNative(assertion.nativeRange, source.scheme)
+		if err != nil {
+			return testFile{}, fmt.Errorf("parse native range %q: %w", assertion.nativeRange, err)
+		}
+		// RawConstraints preserve legacy from-native rendering. Containment
+		// fixtures need the expanded intervals that implement native behavior.
+		containmentRange := *r
+		containmentRange.RawConstraints = nil
+		if r.IsEmpty() {
+			containmentRange = *vers.NewRange([]vers.Interval{vers.ExactInterval("0.0.0")})
+			containmentRange.Exclusions = []string{"0.0.0"}
+			containmentRange.Scheme = source.scheme
+		}
+		versURI := vers.ToVersString(&containmentRange, source.scheme)
+		key := versURI + "\x00" + assertion.version + "\x00" + strconv.FormatBool(assertion.contains)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		verb := "excludes"
+		if assertion.contains {
+			verb = "contains"
+		}
+		tests = append(tests, testCase{
+			Description: fmt.Sprintf("%s range %q %s %q.", source.name, assertion.nativeRange, verb, assertion.version),
+			TestGroup:   testGroupRecommended, TestType: testTypeContainment,
+			Input: testInput{Vers: versURI, Version: assertion.version}, ExpectedOutput: assertion.contains,
+		})
+	}
+	if len(tests) == 0 {
+		return testFile{}, errors.New("no native range assertions found")
+	}
+	return testFile{Schema: schemaURL, Tests: tests}, nil
 }
 
 func writeJSON(filename string, value any) error {

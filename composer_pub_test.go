@@ -3,7 +3,7 @@ package vers
 import "testing"
 
 func TestParseComposerRangeErrors(t *testing.T) {
-	for _, constraint := range []string{">=2.*", "^", "1.0 -", ">=1.0 ||"} {
+	for _, constraint := range []string{">=2.*", "^", "~x-dev", "1.0 -", ">=1.0 ||"} {
 		if _, err := ParseNative(constraint, schemeComposer); err == nil {
 			t.Errorf("ParseNative(%q, composer) succeeded", constraint)
 		}
@@ -110,6 +110,30 @@ func TestComposerAndPubVersRoundTrip(t *testing.T) {
 		}
 		if roundTrip.Contains(test.outside) {
 			t.Errorf("Parse(%q).Contains(%q) = true", uri, test.outside)
+		}
+	}
+}
+
+func TestComposerDevWildcardRanges(t *testing.T) {
+	tests := []struct {
+		constraint string
+		version    string
+		want       bool
+	}{
+		{constraint: "~2.x-dev", version: "2.9999999.9999999.9999999-dev", want: true},
+		{constraint: "~2.x-dev", version: "3.0.0.0-dev", want: false},
+		{constraint: "~2.0.x-dev", version: "2.1.0.0-dev", want: false},
+		{constraint: "^2.0.x-dev", version: "2.0.9999999.9999999-dev", want: true},
+		{constraint: "^2.0.x-dev", version: "3.0.0.0-dev", want: false},
+		{constraint: "2.x-dev - 3.x-dev", version: "3.9999999.9999999.9999999-dev", want: true},
+	}
+	for _, test := range tests {
+		r, err := ParseNative(test.constraint, schemeComposer)
+		if err != nil {
+			t.Fatalf("ParseNative(%q, composer): %v", test.constraint, err)
+		}
+		if got := r.Contains(test.version); got != test.want {
+			t.Errorf("ParseNative(%q, composer).Contains(%q) = %v, want %v", test.constraint, test.version, got, test.want)
 		}
 	}
 }

@@ -185,6 +185,346 @@ func extractGo(files map[string]string) ([]comparison, error) {
 	return requireComparisons(items)
 }
 
+func extractNodeSemverRanges(files map[string]string) ([]nativeRangeAssertion, error) {
+	row := regexp.MustCompile(`^\s*\[\s*'([^']*)'\s*,\s*'([^']*)'(?:\s*,\s*(.*?))?\s*\],?(?:\s*//.*)?$`)
+	var assertions []nativeRangeAssertion
+	for _, source := range []struct {
+		filename string
+		contains bool
+	}{
+		{"test/fixtures/range-include.js", true},
+		{"test/fixtures/range-exclude.js", false},
+	} {
+		for _, line := range strings.Split(files[source.filename], "\n") {
+			match := row.FindStringSubmatch(line)
+			if match == nil || !supportedNodeSemverOptions(match[3]) {
+				continue
+			}
+			assertions = append(assertions, nativeRangeAssertion{
+				nativeRange: decodeJavaScriptString(match[1]),
+				version:     decodeJavaScriptString(match[2]),
+				contains:    source.contains,
+			})
+		}
+	}
+	return requireRangeAssertions(assertions)
+}
+
+func decodeJavaScriptString(value string) string {
+	decoded, err := strconv.Unquote(`"` + strings.ReplaceAll(value, `"`, `\"`) + `"`)
+	if err != nil {
+		return value
+	}
+	return decoded
+}
+
+func supportedNodeSemverOptions(options string) bool {
+	switch strings.TrimSpace(options) {
+	case "", "{}", "{ loose: false }", "{ loose: null }", "{ loose: 0 }", "{ loose: undefined }":
+		return true
+	default:
+		return false
+	}
+}
+
+func extractPyPIRanges(files map[string]string) ([]nativeRangeAssertion, error) {
+	content := files["tests/test_specifiers.py"]
+	start := strings.Index(content, `("version", "spec_str", "expected")`)
+	if start < 0 {
+		return nil, fmt.Errorf("specifier containment table not found")
+	}
+	end := strings.Index(content[start:], "def test_specifiers(")
+	if end < 0 {
+		return nil, fmt.Errorf("specifier containment table is not closed")
+	}
+	block := content[start : start+end]
+	falseStart := strings.Index(block, "(v, s, False)")
+	if falseStart < 0 {
+		return nil, fmt.Errorf("false specifier cases not found")
+	}
+	pair := regexp.MustCompile(`\("([^"]*)",\s*"([^"]*)"\)`)
+	assertions := make([]nativeRangeAssertion, 0)
+	for _, group := range []struct {
+		content  string
+		contains bool
+	}{
+		{block[:falseStart], true},
+		{block[falseStart:], false},
+	} {
+		for _, match := range pair.FindAllStringSubmatch(group.content, -1) {
+			assertions = append(assertions, nativeRangeAssertion{
+				nativeRange: match[2], version: match[1], contains: group.contains,
+			})
+		}
+	}
+	return requireRangeAssertions(assertions)
+}
+
+func extractRubyGemsRanges(files map[string]string) ([]nativeRangeAssertion, error) {
+	content := files["test/rubygems/test_gem_requirement.rb"]
+	row := regexp.MustCompile(`(?m)^\s*(assert|refute)_satisfied_by\s+"([^"]*)",\s+"([^"]*)"`)
+	assertions := make([]nativeRangeAssertion, 0)
+	for _, match := range row.FindAllStringSubmatch(content, -1) {
+		assertions = append(assertions, nativeRangeAssertion{
+			nativeRange: match[3], version: match[2], contains: match[1] == "assert",
+		})
+	}
+	return requireRangeAssertions(assertions)
+}
+
+func extractComposerRanges(files map[string]string) ([]nativeRangeAssertion, error) {
+	content := files["tests/VersionParserTest.php"]
+	rowStart := regexp.MustCompile(`array\('([^']*)'`)
+	constraint := regexp.MustCompile(`new Constraint\('([^']+)',\s*'([^']+)'\)`)
+	assertions := make([]nativeRangeAssertion, 0)
+	for _, provider := range []string{
+		"simpleConstraints", "wildcardConstraints", "tildeConstraints", "caretConstraints", "hyphenConstraints",
+	} {
+		block := functionBlock(content, "function "+provider+"()")
+		for _, line := range strings.Split(block, "\n") {
+			input := rowStart.FindStringSubmatch(line)
+			if input == nil {
+				continue
+			}
+			for _, match := range constraint.FindAllStringSubmatch(line, -1) {
+				assertions = append(assertions, nativeRangeAssertion{
+					nativeRange: input[1], version: match[2], contains: composerConstraintContainsBound(match[1]),
+				})
+			}
+		}
+	}
+	return requireRangeAssertions(assertions)
+}
+
+func composerConstraintContainsBound(operator string) bool {
+	switch operator {
+	case "=", "==", ">=", "<=":
+		return true
+	default:
+		return false
+	}
+}
+
+func extractPubRanges(files map[string]string) ([]nativeRangeAssertion, error) {
+	content := files["pkgs/pub_semver/test/version_constraint_test.dart"]
+	assignment := regexp.MustCompile(`var constraint = VersionConstraint\.parse\('([^']+)'\);`)
+	matches := assignment.FindAllStringSubmatchIndex(content, -1)
+	assertions := make([]nativeRangeAssertion, 0)
+	version := regexp.MustCompile(`Version\.parse\('([^']+)'\)`)
+	for index, match := range matches {
+		end := len(content)
+		if index+1 < len(matches) {
+			end = matches[index+1][0]
+		}
+		if testEnd := strings.Index(content[match[1]:end], "\n    test("); testEnd >= 0 {
+			end = match[1] + testEnd
+		}
+		block := content[match[1]:end]
+		nativeRange := content[match[2]:match[3]]
+		for _, call := range balancedCalls(block, "allows(") {
+			for _, parsed := range version.FindAllStringSubmatch(call, -1) {
+				assertions = append(assertions, nativeRangeAssertion{
+					nativeRange: nativeRange, version: parsed[1], contains: true,
+				})
+			}
+		}
+		for _, call := range balancedCalls(block, "doesNotAllow(") {
+			for _, parsed := range version.FindAllStringSubmatch(call, -1) {
+				assertions = append(assertions, nativeRangeAssertion{
+					nativeRange: nativeRange, version: parsed[1], contains: false,
+				})
+			}
+		}
+	}
+	constructorAssertions, err := extractPubVersionRangeAssertions(files)
+	if err != nil {
+		return nil, err
+	}
+	assertions = append(assertions, constructorAssertions...)
+	return requireRangeAssertions(assertions)
+}
+
+func extractPubVersionRangeAssertions(files map[string]string) ([]nativeRangeAssertion, error) {
+	content := files["pkgs/pub_semver/test/version_range_test.dart"]
+	utilityContent := files["pkgs/pub_semver/test/utils.dart"]
+	constant := regexp.MustCompile(`final (v\d+) = Version\.parse\('([^']+)'\);`)
+	versions := make(map[string]string)
+	for _, match := range constant.FindAllStringSubmatch(utilityContent, -1) {
+		versions[match[1]] = match[2]
+	}
+	assignment := regexp.MustCompile(`(?s)var range = VersionRange\((.*?)\);`)
+	matches := assignment.FindAllStringSubmatchIndex(content, -1)
+	version := regexp.MustCompile(`Version\.parse\('([^']+)'\)`)
+	assertions := make([]nativeRangeAssertion, 0)
+	for index, match := range matches {
+		end := len(content)
+		if index+1 < len(matches) {
+			end = matches[index+1][0]
+		}
+		if testEnd := strings.Index(content[match[1]:end], "\n    test("); testEnd >= 0 {
+			end = match[1] + testEnd
+		}
+		nativeRange, err := pubConstructorRange(content[match[2]:match[3]], versions)
+		if err != nil {
+			return nil, err
+		}
+		block := content[match[1]:end]
+		for _, call := range balancedCalls(block, "allows(") {
+			for _, parsed := range version.FindAllStringSubmatch(call, -1) {
+				assertions = append(assertions, nativeRangeAssertion{
+					nativeRange: nativeRange, version: parsed[1], contains: true,
+				})
+			}
+		}
+		for _, call := range balancedCalls(block, "doesNotAllow(") {
+			for _, parsed := range version.FindAllStringSubmatch(call, -1) {
+				assertions = append(assertions, nativeRangeAssertion{
+					nativeRange: nativeRange, version: parsed[1], contains: false,
+				})
+			}
+		}
+	}
+	return assertions, nil
+}
+
+func pubConstructorRange(arguments string, versions map[string]string) (string, error) {
+	bound := regexp.MustCompile(`(?:min|max):\s*(Version\.parse\('[^']+'\)|v\d+)`)
+	var minimum, maximum string
+	for _, match := range bound.FindAllStringSubmatch(arguments, -1) {
+		value, err := pubVersionExpression(match[1], versions)
+		if err != nil {
+			return "", err
+		}
+		if strings.HasPrefix(strings.TrimSpace(match[0]), "min:") {
+			minimum = value
+		} else {
+			maximum = value
+		}
+	}
+	var constraints []string
+	if minimum != "" {
+		operator := ">"
+		if strings.Contains(arguments, "includeMin: true") {
+			operator = ">="
+		}
+		constraints = append(constraints, operator+minimum)
+	}
+	if maximum != "" {
+		operator := "<"
+		if strings.Contains(arguments, "includeMax: true") {
+			operator = "<="
+		}
+		constraints = append(constraints, operator+maximum)
+	}
+	if len(constraints) == 0 {
+		return "any", nil
+	}
+	return strings.Join(constraints, " "), nil
+}
+
+func pubVersionExpression(expression string, versions map[string]string) (string, error) {
+	expression = strings.TrimSpace(expression)
+	if strings.HasPrefix(expression, "Version.parse('") {
+		return strings.TrimSuffix(strings.TrimPrefix(expression, "Version.parse('"), "')"), nil
+	}
+	if version, ok := versions[expression]; ok {
+		return version, nil
+	}
+	return "", fmt.Errorf("unknown Pub version expression %q", expression)
+}
+
+func extractCargoRanges(files map[string]string) ([]nativeRangeAssertion, error) {
+	content := files["tests/test_version_req.rs"]
+	rangeStart := regexp.MustCompile(`let ref r = req\("([^"]*)"\);`)
+	assertion := regexp.MustCompile(`(?s)assert_match_(all|none)\(\s*r,\s*&\[(.*?)\]\s*,?\s*\);`)
+	value := regexp.MustCompile(`"([^"]+)"`)
+	assertions := make([]nativeRangeAssertion, 0)
+	ranges := rangeStart.FindAllStringSubmatchIndex(content, -1)
+	for index, item := range ranges {
+		end := len(content)
+		if index+1 < len(ranges) {
+			end = ranges[index+1][0]
+		}
+		if functionEnd := strings.Index(content[item[1]:end], "\n}"); functionEnd >= 0 {
+			end = item[1] + functionEnd
+		}
+		block := content[item[1]:end]
+		nativeRange := content[item[2]:item[3]]
+		for _, match := range assertion.FindAllStringSubmatch(block, -1) {
+			for _, version := range value.FindAllStringSubmatch(match[2], -1) {
+				assertions = append(assertions, nativeRangeAssertion{
+					nativeRange: nativeRange, version: version[1], contains: match[1] == "all",
+				})
+			}
+		}
+	}
+	return requireRangeAssertions(assertions)
+}
+
+func extractMavenRanges(files map[string]string) ([]nativeRangeAssertion, error) {
+	content := files["compat/maven-artifact/src/test/java/org/apache/maven/artifact/versioning/VersionRangeTest.java"]
+	assignment := regexp.MustCompile(`(?:VersionRange\s+)?range\s*=\s*VersionRange\.createFromVersionSpec\("([^"]+)"\);`)
+	containment := regexp.MustCompile(`assert(True|False)\(range\.containsVersion\(new DefaultArtifactVersion\("([^"]+)"\)\)\);`)
+	assertions := make([]nativeRangeAssertion, 0)
+	currentRange := ""
+	for _, line := range strings.Split(content, "\n") {
+		if match := assignment.FindStringSubmatch(line); match != nil {
+			currentRange = match[1]
+		}
+		if match := containment.FindStringSubmatch(line); match != nil && currentRange != "" {
+			assertions = append(assertions, nativeRangeAssertion{
+				nativeRange: currentRange, version: match[2], contains: match[1] == "True",
+			})
+		}
+	}
+	return requireRangeAssertions(assertions)
+}
+
+func balancedCalls(content, marker string) []string {
+	var calls []string
+	for offset := 0; offset < len(content); {
+		relative := strings.Index(content[offset:], marker)
+		if relative < 0 {
+			break
+		}
+		start := offset + relative
+		if start > 0 && content[start-1] == '.' {
+			offset = start + len(marker)
+			continue
+		}
+		open := start + len(marker) - 1
+		depth := 0
+		end := -1
+		for index := open; index < len(content); index++ {
+			switch content[index] {
+			case '(':
+				depth++
+			case ')':
+				depth--
+				if depth == 0 {
+					end = index
+				}
+			}
+			if end >= 0 {
+				break
+			}
+		}
+		if end < 0 {
+			break
+		}
+		calls = append(calls, content[open+1:end])
+		offset = end + 1
+	}
+	return calls
+}
+
+func requireRangeAssertions(assertions []nativeRangeAssertion) ([]nativeRangeAssertion, error) {
+	if len(assertions) == 0 {
+		return nil, fmt.Errorf("no native range assertions found")
+	}
+	return assertions, nil
+}
+
 func quotedListAfter(content, marker string) ([]string, error) {
 	start := strings.Index(content, marker)
 	if start < 0 {

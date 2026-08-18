@@ -75,6 +75,11 @@ func TestParseNpmRange(t *testing.T) {
 		{"^0.2.3 includes patch", "^0.2.3", "0.2.5", true},
 		{"^0.2.3 excludes minor", "^0.2.3", "0.3.0", false},
 		{"^0.0.3 excludes patch", "^0.0.3", "0.0.4", false},
+		{"^x matches all", "^x", "999.0.0", true},
+		{"^0 includes zero major", "^0", "0.9.0", true},
+		{"^0 excludes next major", "^0", "1.0.0", false},
+		{"^0.0 includes patch", "^0.0", "0.0.9", true},
+		{"^0.0 excludes minor", "^0.0", "0.1.0", false},
 
 		// Tilde ranges
 		{"~1.2.3 includes patch", "~1.2.3", "1.2.5", true},
@@ -87,6 +92,9 @@ func TestParseNpmRange(t *testing.T) {
 		{"~1.0 excludes minor", "~1.0", "1.1.0", false},
 		{"~1 includes minor", "~1", "1.9.0", true},
 		{"~1 excludes major", "~1", "2.0.0", false},
+		{"~x matches all", "~x", "999.0.0", true},
+		{"~>1 includes minor", "~>1", "1.9.0", true},
+		{"~>1 excludes major", "~>1", "2.0.0", false},
 
 		// X-ranges
 		{"1.x includes 1.0.0", "1.x", "1.0.0", true},
@@ -94,12 +102,19 @@ func TestParseNpmRange(t *testing.T) {
 		{"1.x excludes 2.0.0", "1.x", "2.0.0", false},
 		{"1.2.x includes 1.2.0", "1.2.x", "1.2.0", true},
 		{"1.2.x excludes 1.3.0", "1.2.x", "1.3.0", false},
+		{"2.x.x includes 2.9.0", "2.x.x", "2.9.0", true},
+		{"2 includes minor", "2", "2.9.0", true},
+		{"2.3 includes patch", "2.3", "2.3.9", true},
+		{"less than partial excludes its release line", "<1.2", "1.2.1", false},
+		{"less than or equal wildcard includes earlier", "<=0.7.x", "0.6.2", true},
 
 		// Hyphen ranges
 		{"1.0.0 - 2.0.0 includes min", "1.0.0 - 2.0.0", "1.0.0", true},
 		{"1.0.0 - 2.0.0 includes max", "1.0.0 - 2.0.0", "2.0.0", true},
 		{"1.0.0 - 2.0.0 includes middle", "1.0.0 - 2.0.0", "1.5.0", true},
 		{"1.0.0 - 2.0.0 excludes below", "1.0.0 - 2.0.0", "0.9.0", false},
+		{"partial hyphen includes upper line", "1 - 2", "2.9.0", true},
+		{"partial hyphen excludes next major", "1 - 2", "3.0.0", false},
 
 		// OR ranges
 		{"|| includes first", "1.0.0 || 2.0.0", "1.0.0", true},
@@ -114,6 +129,9 @@ func TestParseNpmRange(t *testing.T) {
 		// Wildcards
 		{"* matches all", "*", "999.0.0", true},
 		{"x matches all", "x", "999.0.0", true},
+		{"wildcard excludes prerelease", "*", "1.0.0-pre", false},
+		{"caret excludes next-major prerelease", "^1.2.3", "2.0.0-alpha", false},
+		{"tab-separated operator", "<\t2.0.0", "0.2.9", true},
 	}
 
 	parser := NewParser()
@@ -131,6 +149,14 @@ func TestParseNpmRange(t *testing.T) {
 	}
 }
 
+func TestParseNpmRangeErrors(t *testing.T) {
+	for _, constraint := range []string{"1.x.2", "1.2.3.x"} {
+		if _, err := ParseNative(constraint, schemeNPM); err == nil {
+			t.Errorf("ParseNative(%q, npm) succeeded", constraint)
+		}
+	}
+}
+
 func TestParseGemRange(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -143,6 +169,8 @@ func TestParseGemRange(t *testing.T) {
 		{"~> 1.2.3 excludes minor", "~> 1.2.3", "1.3.0", false},
 		{"~> 1.2 includes minor", "~> 1.2", "1.5.0", true},
 		{"~> 1.2 excludes major", "~> 1.2", "2.0.0", false},
+		{"~> 1.0.0 excludes next-minor prerelease", "~> 1.0.0", "1.1.pre", false},
+		{"~> 1.0 excludes next-major prerelease", "~> 1.0", "2.0.a", false},
 
 		// Standard constraints
 		{">= 1.0.0 includes", ">= 1.0.0", "1.5.0", true},
@@ -187,6 +215,13 @@ func TestParsePypiRange(t *testing.T) {
 		{"<2.0.0 includes", "<2.0.0", "1.9.9", true},
 		{"!=1.5.0 excludes", "!=1.5.0", "1.5.0", false},
 		{"!=1.5.0 includes other", "!=1.5.0", "1.4.0", true},
+		{"==2 ignores candidate local", "==2", "2.0+deadbeef", true},
+		{"!=2 excludes candidate local", "!=2", "2.0+deadbeef", false},
+		{"==2.* includes prerelease", "==2.*", "2rc1", true},
+		{"==2.0.* excludes next minor", "==2.0.*", "2.1", false},
+		{"!=2.* excludes matching prerelease", "!=2.*", "2a1", false},
+		{">2 excludes same-release post", ">2", "2.0.post1", false},
+		{"<2 excludes same-release prerelease", "<2", "2.0rc1", false},
 
 		// Comma-separated
 		{">=1.0.0,<2.0.0 includes", ">=1.0.0,<2.0.0", "1.5.0", true},
@@ -292,6 +327,8 @@ func TestParseCargoRange(t *testing.T) {
 		{"^1.2.3 excludes major", "^1.2.3", "2.0.0", false},
 		{"~1.2.3 includes patch", "~1.2.3", "1.2.9", true},
 		{"~1.2.3 excludes minor", "~1.2.3", "1.3.0", false},
+		{"exact ignores build metadata", "=0.1.0+meta", "0.1.0+other", true},
+		{"partial upper excludes same-release prerelease", ">1.0.0-alpha, <1.0", "1.0.0-beta", false},
 	}
 
 	parser := NewParser()

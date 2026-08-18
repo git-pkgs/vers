@@ -27,6 +27,7 @@ const (
 
 const (
 	composerTildeBumpOffset = 2
+	composerVersionParts    = 4
 	composerQualifierDev    = "dev"
 	composerQualifierPatch  = "patch"
 	composerQualifierStable = "stable"
@@ -170,6 +171,12 @@ func splitComposerStabilityFlag(constraint string) (string, string) {
 // parseComposerCaretRange expands a Composer caret constraint and uses a dev
 // upper bound so prereleases of the next breaking version are excluded.
 func parseComposerCaretRange(version string) (*Range, error) {
+	if lower, parts, ok := composerDevWildcardBound(version); ok {
+		upper := incrementComposerRelease(parts[:1], 0)
+		return rangeWithScheme(NewRange([]Interval{
+			NewInterval(lower, upper, true, false),
+		}), schemeComposer), nil
+	}
 	parts, ok := composerReleaseParts(version)
 	if !ok {
 		return nil, fmt.Errorf("invalid composer caret version: %s", version)
@@ -192,6 +199,17 @@ func parseComposerCaretRange(version string) (*Range, error) {
 // components allow the next major; longer versions allow the penultimate
 // component to increase.
 func parseComposerTildeRange(version string) (*Range, error) {
+	if lower, parts, ok := composerDevWildcardBound(version); ok {
+		prefixLength := 0
+		for prefixLength < len(parts) && parts[prefixLength] != "9999999" {
+			prefixLength++
+		}
+		upperParts := parts[:prefixLength]
+		upper := incrementComposerRelease(upperParts, len(upperParts)-1)
+		return rangeWithScheme(NewRange([]Interval{
+			NewInterval(lower, upper, true, false),
+		}), schemeComposer), nil
+	}
 	parts, ok := composerReleaseParts(version)
 	if !ok {
 		return nil, fmt.Errorf("invalid composer tilde version: %s", version)
@@ -256,17 +274,61 @@ func composerWildcardReleaseParts(constraint string) ([]string, bool) {
 // version behaves as a wildcard, while a complete upper version is inclusive.
 func parseComposerHyphenRange(lower, upper string) (*Range, error) {
 	_, lowerOK := composerReleaseParts(lower)
+	min, lowerWildcardParts, lowerWildcard := composerDevWildcardBound(lower)
+	if lowerWildcard {
+		lowerOK = len(lowerWildcardParts) > 0
+	} else {
+		min, _ = canonicalComposerNumericVersion(lower, composerQualifierDev)
+	}
 	upperParts, upperOK := composerReleaseParts(upper)
+	max, _, upperWildcard := composerDevWildcardBound(upper)
+	if upperWildcard {
+		upperOK = true
+	}
 	if !lowerOK || !upperOK {
 		return nil, fmt.Errorf("invalid composer hyphen range: %s - %s", lower, upper)
 	}
-	min, _ := canonicalComposerNumericVersion(lower, composerQualifierDev)
+	if upperWildcard {
+		return rangeWithScheme(NewRange([]Interval{NewInterval(min, max, true, true)}), schemeComposer), nil
+	}
 	if len(upperParts) < 3 && !hasComposerStability(upper) { //nolint:mnd
-		max := incrementComposerRelease(upperParts, len(upperParts)-1)
+		max = incrementComposerRelease(upperParts, len(upperParts)-1)
 		return rangeWithScheme(NewRange([]Interval{NewInterval(min, max, true, false)}), schemeComposer), nil
 	}
-	max, _ := canonicalComposerNumericVersion(upper, "")
+	max, _ = canonicalComposerNumericVersion(upper, "")
 	return rangeWithScheme(NewRange([]Interval{NewInterval(min, max, true, true)}), schemeComposer), nil
+}
+
+func composerDevWildcardBound(version string) (string, []string, bool) {
+	version = normalizeComposerLower(version)
+	if !strings.HasSuffix(strings.ToLower(version), "-dev") {
+		return "", nil, false
+	}
+	release := version[:len(version)-len("-dev")]
+	segments := strings.Split(release, ".")
+	parts := make([]string, 0, composerVersionParts)
+	wildcard := false
+	for _, segment := range segments {
+		if segment == "*" || strings.EqualFold(segment, "x") {
+			if len(parts) == 0 {
+				return "", nil, false
+			}
+			wildcard = true
+			parts = append(parts, "9999999")
+			continue
+		}
+		if wildcard || !isDigits(segment) {
+			return "", nil, false
+		}
+		parts = append(parts, trimLeadingZeros(segment))
+	}
+	if !wildcard || len(parts) > composerVersionParts {
+		return "", nil, false
+	}
+	for len(parts) < composerVersionParts {
+		parts = append(parts, "9999999")
+	}
+	return strings.Join(parts, ".") + "-dev", parts, true
 }
 
 // hasComposerStability reports whether a numeric Composer version has an

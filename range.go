@@ -25,23 +25,128 @@ func NewRange(intervals []Interval) *Range {
 
 // Contains checks if the range contains the given version.
 func (r *Range) Contains(version string) bool {
+	scheme := canonicalScheme(r.Scheme)
 	cmp := compareFuncFor(r.Scheme)
+	if scheme == schemeCargo {
+		cmp = compareSemver
+	}
+	if scheme == schemeNPM || scheme == schemeCargo {
+		if _, err := ParseVersion(version); err != nil {
+			return false
+		}
+	}
 
 	// Check exclusions first
 	for _, exc := range r.Exclusions {
-		if cmp(version, exc) == 0 {
+		if scheme == schemePyPI && pep440SpecifierEqual(version, exc) || scheme != schemePyPI && cmp(version, exc) == 0 {
 			return false
 		}
 	}
 
 	// Check if version is in any interval
 	for _, interval := range r.Intervals {
-		if interval.containsCmp(version, cmp) {
+		contains := interval.containsCmp(version, cmp)
+		if scheme == schemePyPI {
+			contains = pypiIntervalContains(interval, version)
+		}
+		if contains && (scheme == schemeNPM || scheme == schemeCargo) && !semverIntervalAllowsPrerelease(interval, version) {
+			contains = false
+		}
+		if contains {
 			return true
 		}
 	}
 
 	return false
+}
+
+func semverIntervalAllowsPrerelease(interval Interval, version string) bool {
+	candidate, err := ParseVersion(version)
+	if err != nil || candidate.Prerelease == "" {
+		return err == nil
+	}
+	for _, bound := range []string{interval.Min, interval.Max} {
+		parsed, parseErr := ParseVersion(bound)
+		if parseErr == nil && parsed.Prerelease != "" &&
+			parsed.Major == candidate.Major && parsed.Minor == candidate.Minor && parsed.Patch == candidate.Patch {
+			return true
+		}
+	}
+	return false
+}
+
+func pypiIntervalContains(interval Interval, version string) bool {
+	if interval.Min != "" && interval.Max != "" && interval.MinInclusive && interval.MaxInclusive &&
+		comparePyPI(interval.Min, interval.Max) == 0 {
+		return pep440SpecifierEqual(version, interval.Min)
+	}
+	if !interval.containsCmp(version, comparePyPI) {
+		return false
+	}
+	candidate, candidateOK := parsePEP440(version)
+	if !candidateOK {
+		return false
+	}
+	if interval.Min != "" && !interval.MinInclusive {
+		bound, boundOK := parsePEP440(interval.Min)
+		if boundOK {
+			if pep440SpecifierEqual(version, interval.Min) {
+				return false
+			}
+			withoutPost := candidate
+			withoutPost.hasPost = false
+			withoutPost.post = ""
+			withoutPost.hasDev = false
+			withoutPost.dev = ""
+			withoutPost.local = nil
+			if candidate.hasPost && pep440VersionsEqual(withoutPost, bound, true) {
+				return false
+			}
+		}
+	}
+	if interval.Max != "" && !interval.MaxInclusive {
+		bound, boundOK := parsePEP440(interval.Max)
+		if boundOK {
+			if !bound.hasPre && !bound.hasPost && !bound.hasDev &&
+				samePEP440Release(candidate, bound) && (candidate.hasPre || candidate.hasDev) {
+				return false
+			}
+			withoutDev := candidate
+			withoutDev.hasDev = false
+			withoutDev.dev = ""
+			withoutDev.local = nil
+			if candidate.hasDev && pep440VersionsEqual(withoutDev, bound, true) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func pep440SpecifierEqual(version, specifier string) bool {
+	candidate, candidateOK := parsePEP440(version)
+	bound, boundOK := parsePEP440(specifier)
+	if !candidateOK || !boundOK {
+		return comparePyPI(version, specifier) == 0
+	}
+	return pep440VersionsEqual(candidate, bound, len(bound.local) == 0)
+}
+
+func pep440VersionsEqual(left, right pep440Version, ignoreLocal bool) bool {
+	if ignoreLocal {
+		left.local = nil
+		right.local = nil
+	}
+	return cmpNumStr(left.epoch, right.epoch) == 0 &&
+		cmpNumStrSlice(left.release, right.release) == 0 &&
+		cmpPEP440Pre(left, right) == 0 &&
+		cmpPEP440Post(left, right) == 0 &&
+		cmpPEP440Dev(left, right) == 0 &&
+		cmpPEP440Local(left.local, right.local) == 0
+}
+
+func samePEP440Release(left, right pep440Version) bool {
+	return cmpNumStr(left.epoch, right.epoch) == 0 && cmpNumStrSlice(left.release, right.release) == 0
 }
 
 // IsEmpty returns true if this range matches no versions.

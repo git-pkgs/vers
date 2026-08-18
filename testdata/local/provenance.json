@@ -20,10 +20,13 @@
       "license": "ISC",
       "source_files": [
         "test/fixtures/comparisons.js",
-        "test/fixtures/equality.js"
+        "test/fixtures/equality.js",
+        "test/fixtures/range-include.js",
+        "test/fixtures/range-exclude.js"
       ],
       "generated_files": [
-        "tests/npm_version_cmp_test.json"
+        "tests/npm_version_cmp_test.json",
+        "tests/npm_range_reference_test.json"
       ]
     },
     {
@@ -31,10 +34,12 @@
       "commit": "55cbf1b9426f44455fa1a9e0836f1fc082cc8452",
       "license": "Apache-2.0 OR BSD-2-Clause",
       "source_files": [
-        "tests/test_version.py"
+        "tests/test_version.py",
+        "tests/test_specifiers.py"
       ],
       "generated_files": [
-        "tests/pypi_version_cmp_test.json"
+        "tests/pypi_version_cmp_test.json",
+        "tests/pypi_range_reference_test.json"
       ]
     },
     {
@@ -42,10 +47,12 @@
       "commit": "370fe6876eec1714cd0f8824c3f19f4d368dfe7c",
       "license": "MIT",
       "source_files": [
-        "test/rubygems/test_gem_version.rb"
+        "test/rubygems/test_gem_version.rb",
+        "test/rubygems/test_gem_requirement.rb"
       ],
       "generated_files": [
-        "tests/gem_version_cmp_test.json"
+        "tests/gem_version_cmp_test.json",
+        "tests/gem_range_reference_test.json"
       ]
     },
     {
@@ -53,10 +60,12 @@
       "commit": "1cbc9b575a27458074d21a3bab95b847c8de387c",
       "license": "MIT",
       "source_files": [
-        "tests/ComparatorTest.php"
+        "tests/ComparatorTest.php",
+        "tests/VersionParserTest.php"
       ],
       "generated_files": [
-        "tests/composer_version_cmp_test.json"
+        "tests/composer_version_cmp_test.json",
+        "tests/composer_range_reference_test.json"
       ]
     },
     {
@@ -64,10 +73,14 @@
       "commit": "a22c3a687dc1b35630fb34c296157d66565429cd",
       "license": "BSD-3-Clause",
       "source_files": [
-        "pkgs/pub_semver/test/version_test.dart"
+        "pkgs/pub_semver/test/version_test.dart",
+        "pkgs/pub_semver/test/version_range_test.dart",
+        "pkgs/pub_semver/test/version_constraint_test.dart",
+        "pkgs/pub_semver/test/utils.dart"
       ],
       "generated_files": [
-        "tests/pub_version_cmp_test.json"
+        "tests/pub_version_cmp_test.json",
+        "tests/pub_range_reference_test.json"
       ]
     },
     {
@@ -75,10 +88,23 @@
       "commit": "280ebcb6edac3aa4cdc545dbff8a26c5ac4861fe",
       "license": "MIT OR Apache-2.0",
       "source_files": [
-        "tests/test_version.rs"
+        "tests/test_version.rs",
+        "tests/test_version_req.rs"
       ],
       "generated_files": [
-        "tests/cargo_version_cmp_test.json"
+        "tests/cargo_version_cmp_test.json",
+        "tests/cargo_range_reference_test.json"
+      ]
+    },
+    {
+      "repository": "https://github.com/apache/maven.git",
+      "commit": "48514f63b2799844c9f8d7746f73a95123526df7",
+      "license": "Apache-2.0",
+      "source_files": [
+        "compat/maven-artifact/src/test/java/org/apache/maven/artifact/versioning/VersionRangeTest.java"
+      ],
+      "generated_files": [
+        "tests/maven_range_reference_test.json"
       ]
     },
     {
