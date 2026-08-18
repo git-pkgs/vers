@@ -54,10 +54,14 @@ func (p *Parser) parseNative(constraint string, scheme string) (*Range, error) {
 	switch scheme {
 	case schemeNPM:
 		return p.parseNpmRange(constraint)
+	case schemeComposer:
+		return p.parseComposerRange(constraint)
 	case schemeGem, schemeRubyGems:
 		return p.parseGemRange(constraint)
 	case schemePyPI:
 		return p.parsePypiRange(constraint)
+	case schemePub:
+		return p.parsePubRange(constraint)
 	case schemeMaven:
 		return p.parseMavenRange(constraint)
 	case schemeNuGet:
@@ -197,7 +201,7 @@ func normalizeVersion(version, scheme string) string {
 	dots := strings.Count(version, ".")
 
 	switch scheme {
-	case schemeNPM, schemeCargo, schemeNuGet:
+	case schemeNPM, schemeCargo, schemeNuGet, schemeComposer, schemePub:
 		// These schemes use semver, normalize to 3 parts
 		switch dots {
 		case 0:
