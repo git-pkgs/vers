@@ -1,0 +1,18 @@
+{
+  "sources": [
+    {
+      "repository": "https://github.com/git-pkgs/vers",
+      "commit": "aca1342a0af1b6308ced629af1913ab42a66dbb5",
+      "license": "MIT",
+      "source_file": "composer_pub_test.go",
+      "generated_files": [
+        "tests/composer_range_containment_test.json",
+        "tests/composer_range_from_native_test.json",
+        "tests/composer_version_cmp_test.json",
+        "tests/pub_range_containment_test.json",
+        "tests/pub_range_from_native_test.json",
+        "tests/pub_version_cmp_test.json"
+      ]
+    }
+  ]
+}

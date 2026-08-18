@@ -2,256 +2,432 @@ package vers
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"testing"
 )
+
+const tupleSize = 2
 
 type versTestFile struct {
 	Tests []versTestCase `json:"tests"`
 }
 
 type versTestCase struct {
-	Description    string          `json:"description"`
-	TestGroup      string          `json:"test_group"`
+	Description     string          `json:"description"`
+	TestGroup       string          `json:"test_group"`
+	TestType        string          `json:"test_type"`
+	Input           json.RawMessage `json:"input"`
+	ExpectedOutput  json.RawMessage `json:"expected_output"`
+	ExpectedFailure bool            `json:"expected_failure"`
+	ExpectedMessage string          `json:"expected_message"`
+}
+
+type conformanceSkipFile struct {
+	Skips []conformanceSkip `json:"skips"`
+}
+
+type conformanceSkip struct {
+	File           string          `json:"file"`
 	TestType       string          `json:"test_type"`
 	Input          json.RawMessage `json:"input"`
-	ExpectedOutput json.RawMessage `json:"expected_output"`
+	ExpectedOutput json.RawMessage `json:"expected_output,omitempty"`
+	Reason         string          `json:"reason"`
+	used           bool
 }
 
-type fromNativeInput struct {
-	NativeRange string `json:"native_range"`
-	Scheme      string `json:"scheme"`
-}
+func TestConformance(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("testdata", "*", "tests", "*.json"))
+	if err != nil {
+		t.Fatalf("find conformance files: %v", err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no conformance files found")
+	}
 
-type containmentInput struct {
-	Vers    string `json:"vers"`
-	Version string `json:"version"`
-}
+	skips := loadConformanceSkips(t)
+	for _, filename := range files {
+		relative, err := filepath.Rel("testdata", filename)
+		if err != nil {
+			t.Fatalf("make %s relative to testdata: %v", filename, err)
+		}
+		relative = filepath.ToSlash(relative)
 
-type versionCmpInput struct {
-	InputScheme string   `json:"input_scheme"`
-	Versions    []string `json:"versions"`
-}
-
-type roundtripInput struct {
-	Vers string `json:"vers"`
+		t.Run(relative, func(t *testing.T) {
+			tf := loadTestFile(t, filename)
+			for i, tc := range tf.Tests {
+				name := fmt.Sprintf("%04d_%s", i, tc.Description)
+				t.Run(name, func(t *testing.T) {
+					if reason, ok := skips.match(relative, tc); ok {
+						t.Skip(reason)
+					}
+					runConformanceCase(t, tc)
+				})
+			}
+		})
+	}
+	skips.assertAllUsed(t)
 }
 
 func loadTestFile(t *testing.T, filename string) *versTestFile {
 	t.Helper()
-	path := filepath.Join("testdata", "vers-spec", "tests", filename)
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filename)
 	if err != nil {
-		t.Fatalf("failed to read test file %s: %v", filename, err)
+		t.Fatalf("read test file %s: %v", filename, err)
 	}
 	var tf versTestFile
 	if err := json.Unmarshal(data, &tf); err != nil {
-		t.Fatalf("failed to parse test file %s: %v", filename, err)
+		t.Fatalf("parse test file %s: %v", filename, err)
 	}
 	return &tf
 }
 
-func TestConformance_FromNative(t *testing.T) {
-	files := []string{
-		"conan_range_from_native_basic_test.json",
-		"conan_range_from_native_test.json",
-		"gem_range_from_native_test.json",
-		"nginx_range_from_native_test.json",
-		"npm_range_from_native_test.json",
-		"openssl_range_from_native_test.json",
-		"pypi_range_from_native_test.json",
-		"nuget_range_from_native_test.json",
+func loadConformanceSkips(t *testing.T) *conformanceSkipFile {
+	t.Helper()
+	filename := filepath.Join("testdata", "local", "skip.json")
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatalf("read conformance skips: %v", err)
+	}
+	var skips conformanceSkipFile
+	if err := json.Unmarshal(data, &skips); err != nil {
+		t.Fatalf("parse conformance skips: %v", err)
 	}
 
-	for _, file := range files {
-		t.Run(file, func(t *testing.T) {
-			tf := loadTestFile(t, file)
-			for _, tc := range tf.Tests {
-				if tc.TestType != "from_native" {
-					continue
-				}
+	seen := make(map[string]bool, len(skips.Skips))
+	for i := range skips.Skips {
+		skip := &skips.Skips[i]
+		if skip.File == "" || skip.TestType == "" || len(skip.Input) == 0 || skip.Reason == "" {
+			t.Fatalf("conformance skip %d must have file, test_type, input, and reason", i)
+		}
+		key := skip.identity(t)
+		if seen[key] {
+			t.Fatalf("duplicate conformance skip %d for %s", i, skip.File)
+		}
+		seen[key] = true
+	}
+	return &skips
+}
 
-				var input fromNativeInput
-				if err := json.Unmarshal(tc.Input, &input); err != nil {
-					t.Errorf("failed to parse input: %v", err)
-					continue
-				}
+func (skips *conformanceSkipFile) match(filename string, tc versTestCase) (string, bool) {
+	for i := range skips.Skips {
+		skip := &skips.Skips[i]
+		if skip.File != filename || skip.TestType != tc.TestType || !equalJSON(skip.Input, tc.Input) {
+			continue
+		}
+		if len(skip.ExpectedOutput) > 0 && !equalJSON(skip.ExpectedOutput, tc.ExpectedOutput) {
+			continue
+		}
+		skip.used = true
+		return skip.Reason, true
+	}
+	return "", false
+}
 
-				var expected string
-				if err := json.Unmarshal(tc.ExpectedOutput, &expected); err != nil {
-					t.Errorf("failed to parse expected output: %v", err)
-					continue
-				}
-
-				t.Run(input.NativeRange, func(t *testing.T) {
-					r, err := ParseNative(input.NativeRange, input.Scheme)
-					if err != nil {
-						t.Errorf("ParseNative(%q, %q) error: %v", input.NativeRange, input.Scheme, err)
-						return
-					}
-
-					got := ToVersString(r, input.Scheme)
-					if got != expected {
-						t.Errorf("ParseNative(%q, %q) = %q, want %q", input.NativeRange, input.Scheme, got, expected)
-					}
-				})
-			}
-		})
+func (skips *conformanceSkipFile) assertAllUsed(t *testing.T) {
+	t.Helper()
+	for _, skip := range skips.Skips {
+		if !skip.used {
+			t.Errorf("unused conformance skip for %s %s: %s", skip.File, skip.TestType, skip.Reason)
+		}
 	}
 }
 
-func TestConformance_Containment(t *testing.T) {
-	files := []string{
-		"npm_range_containment_test.json",
-		"pypi_range_containment_test.json",
+func (skip conformanceSkip) identity(t *testing.T) string {
+	t.Helper()
+	return skip.File + "\x00" + skip.TestType + "\x00" + normalizedJSON(t, skip.Input) +
+		"\x00" + normalizedJSON(t, skip.ExpectedOutput)
+}
+
+func normalizedJSON(t *testing.T, data json.RawMessage) string {
+	t.Helper()
+	if len(data) == 0 {
+		return ""
 	}
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		t.Fatalf("parse JSON value: %v", err)
+	}
+	normalized, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("normalize JSON value: %v", err)
+	}
+	return string(normalized)
+}
 
-	for _, file := range files {
-		t.Run(file, func(t *testing.T) {
-			tf := loadTestFile(t, file)
-			for _, tc := range tf.Tests {
-				if tc.TestType != "containment" {
-					continue
-				}
+func equalJSON(a, b json.RawMessage) bool {
+	var av, bv any
+	if json.Unmarshal(a, &av) != nil || json.Unmarshal(b, &bv) != nil {
+		return false
+	}
+	return reflect.DeepEqual(av, bv)
+}
 
-				var input containmentInput
-				if err := json.Unmarshal(tc.Input, &input); err != nil {
-					t.Errorf("failed to parse input: %v", err)
-					continue
-				}
-
-				var expected bool
-				if err := json.Unmarshal(tc.ExpectedOutput, &expected); err != nil {
-					t.Errorf("failed to parse expected output: %v", err)
-					continue
-				}
-
-				t.Run(input.Vers+"_"+input.Version, func(t *testing.T) {
-					r, err := Parse(input.Vers)
-					if err != nil {
-						t.Errorf("Parse(%q) error: %v", input.Vers, err)
-						return
-					}
-
-					got := r.Contains(input.Version)
-					if got != expected {
-						t.Errorf("Parse(%q).Contains(%q) = %v, want %v", input.Vers, input.Version, got, expected)
-					}
-				})
-			}
-		})
+func runConformanceCase(t *testing.T, tc versTestCase) {
+	t.Helper()
+	switch tc.TestType {
+	case "from_native":
+		runFromNativeCase(t, tc)
+	case "containment":
+		runContainmentCase(t, tc)
+	case "validate", "roundtrip":
+		runValidateCase(t, tc)
+	case "comparison":
+		runComparisonCase(t, tc)
+	case "equality":
+		runEqualityCase(t, tc)
+	case "parse":
+		runParseCase(t, tc)
+	default:
+		t.Fatalf("unsupported conformance test type %q", tc.TestType)
 	}
 }
 
-func TestConformance_RoundTrip(t *testing.T) {
-	tf := loadTestFile(t, "pypi_range_roundtrip_test.json")
-	for _, tc := range tf.Tests {
-		if tc.TestType != "roundtrip" {
-			continue
-		}
-		var input roundtripInput
-		if err := json.Unmarshal(tc.Input, &input); err != nil {
-			t.Errorf("failed to parse input: %v", err)
-			continue
-		}
-		var expected string
-		if err := json.Unmarshal(tc.ExpectedOutput, &expected); err != nil {
-			t.Errorf("failed to parse expected output: %v", err)
-			continue
-		}
-		t.Run(input.Vers, func(t *testing.T) {
-			r, err := Parse(input.Vers)
-			if err != nil {
-				t.Fatalf("Parse(%q) error: %v", input.Vers, err)
-			}
-			if got := ToVersString(r, r.Scheme); got != expected {
-				t.Errorf("round trip = %q, want %q", got, expected)
-			}
-		})
+func runFromNativeCase(t *testing.T, tc versTestCase) {
+	t.Helper()
+	var input struct {
+		NativeRange string `json:"native_range"`
+		Type        string `json:"type"`
+		Scheme      string `json:"scheme"`
+	}
+	decodeConformanceValue(t, tc.Input, &input)
+	scheme := chooseAlias(t, "from-native type", input.Type, input.Scheme)
+
+	r, err := ParseNative(input.NativeRange, scheme)
+	if !checkConformanceError(t, tc, err) {
+		return
+	}
+	var expected string
+	decodeConformanceValue(t, tc.ExpectedOutput, &expected)
+	if got := ToVersString(r, scheme); got != expected {
+		t.Errorf("ParseNative(%q, %q) = %q, want %q", input.NativeRange, scheme, got, expected)
 	}
 }
 
-//nolint:gocognit
-func TestConformance_VersionComparison(t *testing.T) {
-	files := []string{
-		"alpine_version_cmp_test.json",
-		"alpm_version_cmp_test.json",
-		"conan_version_cmp_test.json",
-		"gentoo_version_cmp_test.json",
-		"lexicographic-test.json",
-		"nuget_version_cmp_test.json",
-		"maven_version_cmp_test.json",
-		"openssl_version_cmp_test.json",
+func runContainmentCase(t *testing.T, tc versTestCase) {
+	t.Helper()
+	var input struct {
+		Vers    string `json:"vers"`
+		Version string `json:"version"`
+	}
+	decodeConformanceValue(t, tc.Input, &input)
+	r, err := Parse(input.Vers)
+	if !checkConformanceError(t, tc, err) {
+		return
+	}
+	var expected bool
+	decodeConformanceValue(t, tc.ExpectedOutput, &expected)
+	if got := r.Contains(input.Version); got != expected {
+		t.Errorf("Parse(%q).Contains(%q) = %v, want %v", input.Vers, input.Version, got, expected)
+	}
+}
+
+func runValidateCase(t *testing.T, tc versTestCase) {
+	t.Helper()
+	input := decodeVersInput(t, tc.Input)
+	r, err := defaultParser.parseVersURI(input, false)
+	if !checkConformanceError(t, tc, err) {
+		return
+	}
+	var expected string
+	decodeConformanceValue(t, tc.ExpectedOutput, &expected)
+	if got := ToVersString(r, r.Scheme); got != expected {
+		t.Errorf("validate %q = %q, want %q", input, got, expected)
+	}
+}
+
+func runComparisonCase(t *testing.T, tc versTestCase) {
+	t.Helper()
+	input, scheme := decodeComparisonInput(t, tc.Input)
+	var expected []string
+	decodeConformanceValue(t, tc.ExpectedOutput, &expected)
+	if len(input) != len(expected) || len(input) < tupleSize {
+		t.Fatalf("comparison has %d inputs and %d outputs, want equal lengths of at least %d", len(input), len(expected), tupleSize)
 	}
 
-	for _, file := range files {
-		t.Run(file, func(t *testing.T) {
-			tf := loadTestFile(t, file)
-			for _, tc := range tf.Tests {
-				var input versionCmpInput
-				if err := json.Unmarshal(tc.Input, &input); err != nil {
-					t.Errorf("failed to parse input: %v", err)
-					continue
-				}
+	got := append([]string(nil), input...)
+	sort.SliceStable(got, func(i, j int) bool {
+		return CompareWithScheme(got[i], got[j], scheme) < 0
+	})
+	for i := range got {
+		if CompareWithScheme(got[i], expected[i], scheme) != 0 {
+			t.Errorf("sorted versions = %v, want %v", got, expected)
+			return
+		}
+	}
+}
 
-				if len(input.Versions) != 2 {
-					t.Errorf("expected 2 versions, got %d", len(input.Versions))
-					continue
-				}
+func runEqualityCase(t *testing.T, tc versTestCase) {
+	t.Helper()
+	versions, scheme := decodeComparisonInput(t, tc.Input)
+	if len(versions) != tupleSize {
+		t.Fatalf("equality has %d inputs, want %d", len(versions), tupleSize)
+	}
+	var expected bool
+	decodeConformanceValue(t, tc.ExpectedOutput, &expected)
+	got := CompareWithScheme(versions[0], versions[1], scheme) == 0
+	if got != expected {
+		t.Errorf("CompareWithScheme(%q, %q, %q) == 0 is %v, want %v", versions[0], versions[1], scheme, got, expected)
+	}
+}
 
-				v1, v2 := input.Versions[0], input.Versions[1]
+func runParseCase(t *testing.T, tc versTestCase) {
+	t.Helper()
+	var input string
+	decodeConformanceValue(t, tc.Input, &input)
+	r, err := defaultParser.parseVersURI(input, true)
+	if !checkConformanceError(t, tc, err) {
+		return
+	}
 
-				switch tc.TestType {
-				case "equality":
-					var expected bool
-					if err := json.Unmarshal(tc.ExpectedOutput, &expected); err != nil {
-						t.Errorf("failed to parse expected output: %v", err)
-						continue
-					}
+	var output struct {
+		Type               string     `json:"type"`
+		Scheme             string     `json:"scheme"`
+		Constraints        [][]string `json:"constraints"`
+		VersionConstraints [][]string `json:"version_constraints"`
+	}
+	decodeConformanceValue(t, tc.ExpectedOutput, &output)
+	scheme := chooseAlias(t, "parse output type", output.Type, output.Scheme)
+	constraints := chooseConstraintsAlias(t, output.Constraints, output.VersionConstraints)
+	if r.Scheme != scheme {
+		t.Errorf("Parse(%q) scheme = %q, want %q", input, r.Scheme, scheme)
+	}
+	if got := rangeConstraints(r); !reflect.DeepEqual(got, constraints) {
+		t.Errorf("Parse(%q) constraints = %v, want %v", input, got, constraints)
+	}
+}
 
-					t.Run("eq_"+v1+"_"+v2, func(t *testing.T) {
-						cmp := CompareWithScheme(v1, v2, input.InputScheme)
-						got := cmp == 0
-						if got != expected {
-							t.Errorf("CompareWithScheme(%q, %q, %q) == 0 is %v, want %v (cmp=%d)", v1, v2, input.InputScheme, got, expected, cmp)
-						}
-					})
+func decodeComparisonInput(t *testing.T, data json.RawMessage) ([]string, string) {
+	t.Helper()
+	var input struct {
+		InputType   string   `json:"input_type"`
+		InputScheme string   `json:"input_scheme"`
+		Versions    []string `json:"versions"`
+	}
+	decodeConformanceValue(t, data, &input)
+	return input.Versions, chooseAlias(t, "comparison input type", input.InputType, input.InputScheme)
+}
 
-				case "comparison":
-					var expected []string
-					if err := json.Unmarshal(tc.ExpectedOutput, &expected); err != nil {
-						t.Errorf("failed to parse expected output: %v", err)
-						continue
-					}
+func decodeVersInput(t *testing.T, data json.RawMessage) string {
+	t.Helper()
+	var input string
+	if err := json.Unmarshal(data, &input); err == nil {
+		return input
+	}
+	var legacy struct {
+		Vers string `json:"vers"`
+	}
+	decodeConformanceValue(t, data, &legacy)
+	if legacy.Vers == "" {
+		t.Fatal("VERS input is empty")
+	}
+	return legacy.Vers
+}
 
-					if len(expected) != 2 {
-						t.Errorf("expected 2 versions in output, got %d", len(expected))
-						continue
-					}
+func decodeConformanceValue(t *testing.T, data json.RawMessage, value any) {
+	t.Helper()
+	if len(data) == 0 {
+		t.Fatal("missing conformance value")
+	}
+	if err := json.Unmarshal(data, value); err != nil {
+		t.Fatalf("decode conformance value: %v", err)
+	}
+}
 
-					t.Run("cmp_"+v1+"_"+v2, func(t *testing.T) {
-						cmp := CompareWithScheme(v1, v2, input.InputScheme)
-						v1MatchesFirst := CompareWithScheme(v1, expected[0], input.InputScheme) == 0
-						versionsEqual := expected[0] == expected[1] || CompareWithScheme(expected[0], expected[1], input.InputScheme) == 0
+func chooseAlias(t *testing.T, name, current, legacy string) string {
+	t.Helper()
+	if current != "" && legacy != "" && current != legacy {
+		t.Fatalf("conflicting %s values %q and %q", name, current, legacy)
+	}
+	if current != "" {
+		return current
+	}
+	if legacy == "" {
+		t.Fatalf("missing %s", name)
+	}
+	return legacy
+}
 
-						switch {
-						case versionsEqual:
-							if cmp != 0 {
-								t.Errorf("CompareWithScheme(%q, %q, %q) = %d, want 0 (equal versions)", v1, v2, input.InputScheme, cmp)
-							}
-						case v1MatchesFirst:
-							if cmp >= 0 {
-								t.Errorf("CompareWithScheme(%q, %q, %q) = %d, want < 0 (expected order: %v)", v1, v2, input.InputScheme, cmp, expected)
-							}
-						default:
-							if cmp <= 0 {
-								t.Errorf("CompareWithScheme(%q, %q, %q) = %d, want > 0 (expected order: %v)", v1, v2, input.InputScheme, cmp, expected)
-							}
-						}
-					})
-				}
+func chooseConstraintsAlias(t *testing.T, current, legacy [][]string) [][]string {
+	t.Helper()
+	if current != nil && legacy != nil && !reflect.DeepEqual(current, legacy) {
+		t.Fatalf("conflicting parse output constraints %v and %v", current, legacy)
+	}
+	if current != nil {
+		return current
+	}
+	if legacy == nil {
+		t.Fatal("missing parse output constraints")
+	}
+	return legacy
+}
+
+func checkConformanceError(t *testing.T, tc versTestCase, err error) bool {
+	t.Helper()
+	if tc.ExpectedFailure {
+		if err == nil {
+			t.Errorf("expected failure: %s", tc.ExpectedMessage)
+		} else if tc.ExpectedMessage != "" && err.Error() != tc.ExpectedMessage {
+			t.Errorf("error = %q, want %q", err, tc.ExpectedMessage)
+		}
+		return false
+	}
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return true
+}
+
+func rangeConstraints(r *Range) [][]string {
+	intervals := r.Intervals
+	if len(r.RawConstraints) > 0 {
+		intervals = r.RawConstraints
+	}
+	constraints := make([][]string, 0, len(intervals)+len(r.Exclusions))
+	for _, interval := range intervals {
+		if interval.Min != "" && interval.Min == interval.Max && interval.MinInclusive && interval.MaxInclusive {
+			constraints = append(constraints, []string{"=", interval.Min})
+			continue
+		}
+		if interval.Min != "" {
+			operator := ">"
+			if interval.MinInclusive {
+				operator = ">="
 			}
-		})
+			constraints = append(constraints, []string{operator, interval.Min})
+		}
+		if interval.Max != "" {
+			operator := "<"
+			if interval.MaxInclusive {
+				operator = "<="
+			}
+			constraints = append(constraints, []string{operator, interval.Max})
+		}
+	}
+	for _, version := range r.Exclusions {
+		constraints = append(constraints, []string{"!=", version})
+	}
+	return constraints
+}
+
+func TestConformanceSkipMatch(t *testing.T) {
+	skips := conformanceSkipFile{Skips: []conformanceSkip{{
+		File:           "vers-spec/tests/example.json",
+		TestType:       "containment",
+		Input:          json.RawMessage(`{"vers":"vers:npm/*","version":"1.0.0"}`),
+		ExpectedOutput: json.RawMessage(`true`),
+		Reason:         "documented divergence",
+	}}}
+	tc := versTestCase{
+		TestType:       "containment",
+		Input:          json.RawMessage(`{"version":"1.0.0","vers":"vers:npm/*"}`),
+		ExpectedOutput: json.RawMessage(`true`),
+	}
+	reason, ok := skips.match("vers-spec/tests/example.json", tc)
+	if !ok || reason != "documented divergence" || !skips.Skips[0].used {
+		t.Fatalf("match() = %q, %v; used = %v", reason, ok, skips.Skips[0].used)
 	}
 }

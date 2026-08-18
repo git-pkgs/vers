@@ -1,0 +1,37 @@
+{
+  "$schema": "https://packageurl.org/schemas/vers-test.schema-0.2.json",
+  "tests": [
+    {
+      "description": "Pub orders numeric build identifiers numerically.",
+      "test_group": "recommended",
+      "test_type": "comparison",
+      "input": {
+        "input_type": "pub",
+        "versions": [
+          "1.2.3+11",
+          "1.2.3+2"
+        ]
+      },
+      "expected_output": [
+        "1.2.3+2",
+        "1.2.3+11"
+      ]
+    },
+    {
+      "description": "Pub orders a version without build metadata first.",
+      "test_group": "recommended",
+      "test_type": "comparison",
+      "input": {
+        "input_type": "pub",
+        "versions": [
+          "1.2.3+one",
+          "1.2.3"
+        ]
+      },
+      "expected_output": [
+        "1.2.3",
+        "1.2.3+one"
+      ]
+    }
+  ]
+}

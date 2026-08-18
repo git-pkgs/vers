@@ -102,6 +102,22 @@ func TestSemverSchemeComparison(t *testing.T) {
 	}
 }
 
+func TestDatetimeSchemeComparison(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{a: "2024-01-01T00:00:00Z", b: "2023-12-31T19:00:00-05:00", want: 0},
+		{a: "2024-01-01T00:00:00+02:00", b: "2023-12-31T23:00:00Z", want: -1},
+		{a: "2024-01-01T00:00:00.090Z", b: "2024-01-01T00:00:00.123Z", want: -1},
+	}
+	for _, tt := range tests {
+		if got := CompareWithScheme(tt.a, tt.b, schemeDatetime); got != tt.want {
+			t.Errorf("CompareWithScheme(%q, %q, datetime) = %d, want %d", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
+
 func TestGemSchemeComparison(t *testing.T) {
 	tests := []struct {
 		a, b string
