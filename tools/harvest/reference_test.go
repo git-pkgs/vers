@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -75,5 +77,67 @@ func TestMissingRuntime(t *testing.T) {
 	const name = "vers-harvest-runtime-that-does-not-exist"
 	if got := missingRuntime([]string{name}); got != name {
 		t.Errorf("missingRuntime() = %q, want %q", got, name)
+	}
+}
+
+func TestHarvestSourceDoesNotReportSkippedGeneratedFixture(t *testing.T) {
+	source := sourceSpec{
+		name:                     "reference",
+		generatedRangeOutputFile: "generated.json",
+		referenceRuntimes:        []string{"vers-harvest-runtime-that-does-not-exist"},
+		evaluateRanges: func(string, []containmentQuery) ([]bool, error) {
+			return nil, nil
+		},
+	}
+	generated, err := harvestSource(source, nil, "", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(generated) != 0 {
+		t.Errorf("generated files = %v, want none", generated)
+	}
+}
+
+func TestReadSourceReturnsAbsoluteCheckout(t *testing.T) {
+	repository := filepath.Join(t.TempDir(), "reference")
+	if err := os.Mkdir(repository, directoryMode); err != nil {
+		t.Fatal(err)
+	}
+	if err := runGit(repository, "init", "--quiet"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "fixture.txt"), []byte("fixture\n"), fileMode); err != nil {
+		t.Fatal(err)
+	}
+	if err := runGit(repository, "add", "fixture.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runGit(repository, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--quiet", "-m", "fixture"); err != nil {
+		t.Fatal(err)
+	}
+	revision, err := gitOutput(repository, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceRoot, err := filepath.Rel(workingDirectory, filepath.Dir(repository))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := sourceSpec{
+		localPath: "reference", commit: revision, sourceFiles: []string{"fixture.txt"},
+		evaluateRanges: func(string, []containmentQuery) ([]bool, error) { return nil, nil },
+	}
+	_, checkout, cleanup, err := readSource(source, sourceRoot)
+	defer cleanup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(checkout) {
+		t.Errorf("checkout = %q, want an absolute path", checkout)
 	}
 }

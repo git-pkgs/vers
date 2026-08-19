@@ -285,7 +285,6 @@ func harvestSource(source sourceSpec, files map[string]string, checkout, testsDi
 
 	if source.evaluateRanges != nil {
 		generatedFilename := filepath.ToSlash(filepath.Join("tests", source.generatedRangeOutputFile))
-		generatedFiles = append(generatedFiles, generatedFilename)
 		if missing := missingRuntime(source.referenceRuntimes); missing != "" {
 			fmt.Fprintf(os.Stderr, "warning: skip %s generated containment tests: %s not found on PATH\n", source.name, missing)
 			return generatedFiles, nil
@@ -306,6 +305,7 @@ func harvestSource(source sourceSpec, files map[string]string, checkout, testsDi
 		if err := writeJSON(filepath.Join(testsDir, source.generatedRangeOutputFile), file); err != nil {
 			return nil, err
 		}
+		generatedFiles = append(generatedFiles, generatedFilename)
 	}
 
 	return generatedFiles, nil
@@ -313,7 +313,10 @@ func harvestSource(source sourceSpec, files map[string]string, checkout, testsDi
 
 func readSource(source sourceSpec, sourceRoot string) (map[string]string, string, func(), error) {
 	if sourceRoot != "" {
-		repository := filepath.Join(sourceRoot, filepath.FromSlash(source.localPath))
+		repository, err := filepath.Abs(filepath.Join(sourceRoot, filepath.FromSlash(source.localPath)))
+		if err != nil {
+			return nil, "", func() {}, fmt.Errorf("resolve checkout %s: %w", source.localPath, err)
+		}
 		files, err := readGitFiles(repository, source.commit, source.sourceFiles)
 		if err != nil {
 			return nil, "", func() {}, err
