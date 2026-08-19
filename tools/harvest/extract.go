@@ -288,7 +288,7 @@ func extractComposerRanges(files map[string]string) ([]nativeRangeAssertion, err
 			}
 			for _, match := range constraint.FindAllStringSubmatch(line, -1) {
 				assertions = append(assertions, nativeRangeAssertion{
-					nativeRange: input[1], version: match[2], contains: composerConstraintContainsBound(match[1]),
+					nativeRange: input[1], version: match[2], contains: composerConstraintContainsBound(match[1], match[2]),
 				})
 			}
 		}
@@ -296,7 +296,10 @@ func extractComposerRanges(files map[string]string) ([]nativeRangeAssertion, err
 	return requireRangeAssertions(assertions)
 }
 
-func composerConstraintContainsBound(operator string) bool {
+func composerConstraintContainsBound(operator, version string) bool {
+	if strings.HasPrefix(strings.ToLower(version), "dev-") && operator != "=" && operator != "==" {
+		return false
+	}
 	switch operator {
 	case "=", "==", ">=", "<=":
 		return true

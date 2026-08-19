@@ -26,7 +26,8 @@
       ],
       "generated_files": [
         "tests/npm_version_cmp_test.json",
-        "tests/npm_range_reference_test.json"
+        "tests/npm_range_reference_test.json",
+        "tests/npm_range_generated_test.json"
       ]
     },
     {
@@ -39,7 +40,8 @@
       ],
       "generated_files": [
         "tests/pypi_version_cmp_test.json",
-        "tests/pypi_range_reference_test.json"
+        "tests/pypi_range_reference_test.json",
+        "tests/pypi_range_generated_test.json"
       ]
     },
     {
@@ -52,7 +54,8 @@
       ],
       "generated_files": [
         "tests/gem_version_cmp_test.json",
-        "tests/gem_range_reference_test.json"
+        "tests/gem_range_reference_test.json",
+        "tests/gem_range_generated_test.json"
       ]
     },
     {
@@ -65,7 +68,8 @@
       ],
       "generated_files": [
         "tests/composer_version_cmp_test.json",
-        "tests/composer_range_reference_test.json"
+        "tests/composer_range_reference_test.json",
+        "tests/composer_range_generated_test.json"
       ]
     },
     {
@@ -80,7 +84,8 @@
       ],
       "generated_files": [
         "tests/pub_version_cmp_test.json",
-        "tests/pub_range_reference_test.json"
+        "tests/pub_range_reference_test.json",
+        "tests/pub_range_generated_test.json"
       ]
     },
     {
@@ -93,7 +98,8 @@
       ],
       "generated_files": [
         "tests/cargo_version_cmp_test.json",
-        "tests/cargo_range_reference_test.json"
+        "tests/cargo_range_reference_test.json",
+        "tests/cargo_range_generated_test.json"
       ]
     },
     {
@@ -104,7 +110,8 @@
         "compat/maven-artifact/src/test/java/org/apache/maven/artifact/versioning/VersionRangeTest.java"
       ],
       "generated_files": [
-        "tests/maven_range_reference_test.json"
+        "tests/maven_range_reference_test.json",
+        "tests/maven_range_generated_test.json"
       ]
     },
     {

@@ -144,11 +144,13 @@ function simpleConstraints()
     {
         array('>=1.2', new Constraint('>=', '1.2.0.0-dev')),
         array('<2', new Constraint('<', '2.0.0.0-dev')),
+		array('>=dev-master', new Constraint('>=', 'dev-master')),
     }
 `},
 			want: []nativeRangeAssertion{
 				{nativeRange: ">=1.2", version: "1.2.0.0-dev", contains: true},
 				{nativeRange: "<2", version: "2.0.0.0-dev", contains: false},
+				{nativeRange: ">=dev-master", version: "dev-master", contains: false},
 			},
 		},
 		{
@@ -246,6 +248,17 @@ func TestBuildRangeTestFileRepresentsEmptyRange(t *testing.T) {
 	}
 	if got := file.Tests[0].Input.Vers; got == "vers:cargo/" {
 		t.Errorf("empty native range encoded as unbounded VERS %q", got)
+	}
+}
+
+func TestBuildRangeTestFileRejectsConflictingConversions(t *testing.T) {
+	source := sourceSpec{name: "reference", scheme: "npm"}
+	_, err := buildRangeTestFile(source, []nativeRangeAssertion{
+		{nativeRange: "*", version: "1.0.0", contains: true},
+		{nativeRange: "x", version: "1.0.0", contains: false},
+	})
+	if err == nil {
+		t.Fatal("buildRangeTestFile accepted conflicting results for the same VERS input")
 	}
 }
 

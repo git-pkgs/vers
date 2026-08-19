@@ -228,11 +228,18 @@ func parseComposerTildeRange(version string) (*Range, error) {
 // parseComposerWildcardRange expands a Composer wildcard into inclusive and
 // exclusive bounds.
 func parseComposerWildcardRange(constraint string) (*Range, error) {
+	wildcard := strings.TrimSpace(constraint)
+	numericTagsOnly := wildcard != "*" && !strings.EqualFold(wildcard, "x")
 	parts, ok := composerWildcardReleaseParts(constraint)
 	if !ok {
 		return nil, fmt.Errorf("invalid composer wildcard: %s", constraint)
 	}
 	if len(parts) == 0 {
+		if numericTagsOnly {
+			return rangeWithScheme(NewRange([]Interval{
+				NewInterval("0.0.0.0-dev", "", true, false),
+			}), schemeComposer), nil
+		}
 		return rangeWithScheme(Unbounded(), schemeComposer), nil
 	}
 	lower := completeComposerRelease(parts) + "-dev"
@@ -474,8 +481,8 @@ func parseComposerVersion(version string) (composerVersion, bool) {
 func compareComposer(a, b string) int {
 	left, leftOK := parseComposerVersion(a)
 	right, rightOK := parseComposerVersion(b)
-	leftBranch := strings.HasPrefix(strings.ToLower(a), "dev-")
-	rightBranch := strings.HasPrefix(strings.ToLower(b), "dev-")
+	leftBranch := isComposerBranchVersion(a)
+	rightBranch := isComposerBranchVersion(b)
 	if leftBranch != rightBranch {
 		if leftBranch {
 			return -1
@@ -524,9 +531,12 @@ func validComposerVersion(version string) bool {
 	if _, ok := parseComposerVersion(version); ok {
 		return true
 	}
-	lower := strings.ToLower(version)
-	return (strings.HasPrefix(lower, "dev-") && len(version) > len("dev-")) ||
-		composerNumericBranchRegex.MatchString(version)
+	return isComposerBranchVersion(version) || composerNumericBranchRegex.MatchString(version)
+}
+
+func isComposerBranchVersion(version string) bool {
+	version = strings.TrimSpace(version)
+	return len(version) > len("dev-") && strings.HasPrefix(strings.ToLower(version), "dev-")
 }
 
 // normalizeComposerVersion normalizes SemVer-shaped Composer tags while

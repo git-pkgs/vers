@@ -137,3 +137,40 @@ func TestComposerDevWildcardRanges(t *testing.T) {
 		}
 	}
 }
+
+func TestComposerRangeBranchContainment(t *testing.T) {
+	tests := []struct {
+		constraint string
+		version    string
+		want       bool
+	}{
+		{constraint: "*", version: "dev-master", want: true},
+		{constraint: "x", version: "dev-master", want: true},
+		{constraint: "v*", version: "dev-master", want: false},
+		{constraint: "v*", version: "1.0.0", want: true},
+		{constraint: "*.*", version: "dev-master", want: false},
+		{constraint: "<1.2.3", version: "dev-master", want: false},
+		{constraint: "=dev-master", version: "dev-master", want: true},
+		{constraint: "=dev-master", version: "1.0.0", want: false},
+		{constraint: ">=dev-master", version: "dev-master", want: false},
+		{constraint: ">=dev-master", version: "1.0.0", want: false},
+		{constraint: "!=dev-master", version: "dev-master", want: false},
+		{constraint: "!=dev-master", version: "dev-MASTER", want: true},
+		{constraint: "!=dev-master", version: "dev-main", want: true},
+		{constraint: "!=dev-master", version: "1.0.0", want: true},
+	}
+	for _, test := range tests {
+		native, err := ParseNative(test.constraint, schemeComposer)
+		if err != nil {
+			t.Fatalf("ParseNative(%q, composer): %v", test.constraint, err)
+		}
+		uri := ToVersString(native, schemeComposer)
+		roundTrip, err := Parse(uri)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", uri, err)
+		}
+		if got := roundTrip.Contains(test.version); got != test.want {
+			t.Errorf("Parse(%q).Contains(%q) = %v, want %v", uri, test.version, got, test.want)
+		}
+	}
+}
