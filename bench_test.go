@@ -125,6 +125,30 @@ func BenchmarkCompareWithScheme(b *testing.B) {
 	}
 }
 
+// BenchmarkCompareEcosystem covers the scheme specific comparators that do not
+// go through the shared SemVer path, so allocation regressions in them show up
+// directly.
+func BenchmarkCompareEcosystem(b *testing.B) {
+	tests := []struct {
+		name, a, other, scheme string
+	}{
+		{name: "ALPM", a: "1.2.3-1", other: "1.2.4-1", scheme: "alpm"},
+		{name: "ALPM_Epoch", a: "1:1.2.3-1", other: "2:1.2.3-1", scheme: "alpm"},
+		{name: "Conan", a: "1.2.3-rc1", other: "1.2.3", scheme: "conan"},
+		{name: "Conan_Build", a: "1.2.0-alpha+build1", other: "1.2-alpha+build2", scheme: "conan"},
+		{name: "Gentoo", a: "1.2.3_rc1", other: "1.2.3", scheme: "gentoo"},
+		{name: "Gentoo_Revision", a: "1.2.3a_p1-r2", other: "1.2.3a_p2-r1", scheme: "gentoo"},
+		{name: "APK", a: "1.2.3_rc1", other: "1.2.3", scheme: "apk"},
+	}
+	for _, tt := range tests {
+		b.Run(tt.name, func(b *testing.B) {
+			for b.Loop() {
+				CompareWithScheme(tt.a, tt.other, tt.scheme)
+			}
+		})
+	}
+}
+
 func BenchmarkParseConstraint(b *testing.B) {
 	for b.Loop() {
 		_, _ = ParseConstraint(">=1.2.3")

@@ -252,8 +252,8 @@ func compareSemverPrereleaseStrings(a, b string) int {
 	}
 
 	for {
-		aPart, aRest, aMore := nextSemverIdentifier(a)
-		bPart, bRest, bMore := nextSemverIdentifier(b)
+		aPart, aRest, aMore := nextDotPart(a)
+		bPart, bRest, bMore := nextDotPart(b)
 		aNum, bNum := isDigits(aPart), isDigits(bPart)
 		if aNum != bNum {
 			if aNum {
@@ -277,7 +277,10 @@ func compareSemverPrereleaseStrings(a, b string) int {
 	}
 }
 
-func nextSemverIdentifier(s string) (part, rest string, more bool) {
+// nextDotPart splits the leading dot separated component off s. more reports
+// whether another component follows, which lets callers walk two versions in
+// lockstep without materializing either component list.
+func nextDotPart(s string) (part, rest string, more bool) {
 	i := strings.IndexByte(s, '.')
 	if i < 0 {
 		return s, "", false
