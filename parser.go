@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -419,7 +420,7 @@ func (p *Parser) parseNpmRange(s string) (*Range, error) {
 	}
 
 	// Handle space-separated AND constraints
-	if strings.Contains(s, " ") && !strings.Contains(s, " - ") {
+	if strings.ContainsAny(s, " \t\r\n") && !strings.Contains(s, " - ") {
 		parts := tokenizeNpmConstraints(s)
 		var result *Range
 		for _, part := range parts {
@@ -468,7 +469,7 @@ func tokenizeNpmConstraints(s string) []string {
 // isOperatorOnly checks if a string is just an operator without a version.
 func isOperatorOnly(s string) bool {
 	switch s {
-	case ">=", "<=", ">", "<", "=", "!=":
+	case ">=", "<=", ">", "<", "=", "!=", "~", "~>", "^":
 		return true
 	}
 	return false
@@ -486,22 +487,24 @@ func extractOperator(s string) (string, string) {
 }
 
 func (p *Parser) parseNpmSingleRange(s string) (*Range, error) {
+	s = strings.TrimSpace(s)
 	// Caret range: ^1.2.3
 	if strings.HasPrefix(s, "^") {
 		return p.parseCaretRange(s[1:])
 	}
 
-	// Tilde range: ~1.2.3
+	// Tilde range: ~1.2.3 or ~>1.2.3
+	if strings.HasPrefix(s, "~>") {
+		return p.parseTildeRange(strings.TrimSpace(s[2:]))
+	}
 	if strings.HasPrefix(s, "~") {
-		return p.parseTildeRange(s[1:])
+		return p.parseTildeRange(strings.TrimSpace(s[1:]))
 	}
 
 	// Hyphen range: 1.2.3 - 2.0.0
 	if strings.Contains(s, " - ") {
 		parts := strings.SplitN(s, " - ", 2) //nolint:mnd
-		return NewRange([]Interval{
-			NewInterval(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true, true),
-		}), nil
+		return p.parseNpmHyphenRange(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
 	}
 
 	// X-range: 1.x, 1.2.x (also handle operator + x-range like >=1.x)
@@ -509,16 +512,18 @@ func (p *Parser) parseNpmSingleRange(s string) (*Range, error) {
 		// Check if there's an operator prefix
 		op, version := extractOperator(s)
 		if op != "" {
-			// For >=X.x or >X.x, the x-range defines the minimum
-			xRange, err := p.parseXRange(version)
-			if err != nil {
-				return nil, err
-			}
-			// >=2.2.x means >=2.2.0 (start of the x-range)
-			// The x-range itself is the answer for >= with x-range
-			return xRange, nil
+			return p.parseNpmPartialRange(version, op)
 		}
 		return p.parseXRange(s)
+	}
+	if op, version := extractOperator(s); isPartialNpmVersion(version) {
+		return p.parseNpmPartialRange(version, op)
+	}
+	if isPartialNpmVersion(s) {
+		return p.parseNpmPartialRange(s, "")
+	}
+	if op, version := extractOperator(s); op != "" {
+		s = op + strings.TrimSpace(version)
 	}
 
 	// Standard constraint
@@ -538,16 +543,26 @@ func (p *Parser) parseNpmSingleRange(s string) (*Range, error) {
 
 // ^1.2.3 := >=1.2.3 <2.0.0
 func (p *Parser) parseCaretRange(version string) (*Range, error) {
+	if version == "" || version == "*" || version == "x" || version == "X" {
+		return Unbounded(), nil
+	}
+	if strings.HasSuffix(version, ".x") || strings.HasSuffix(version, ".X") || strings.HasSuffix(version, ".*") {
+		return p.parseXRange(version)
+	}
+
 	v, err := ParseVersion(version)
 	if err != nil {
 		return nil, err
 	}
 
+	base := strings.SplitN(version, "+", 2)[0] //nolint:mnd
+	base = strings.SplitN(base, "-", 2)[0]     //nolint:mnd
+	segments := strings.Count(base, ".") + 1
 	var upper string
 	switch {
-	case v.Major > 0:
+	case segments == 1 || v.Major > 0:
 		upper = fmt.Sprintf("%d.0.0", v.Major+1)
-	case v.Minor > 0:
+	case segments == 2 || v.Minor > 0: //nolint:mnd
 		upper = fmt.Sprintf("0.%d.0", v.Minor+1)
 	default:
 		upper = fmt.Sprintf("0.0.%d", v.Patch+1)
@@ -561,29 +576,21 @@ func (p *Parser) parseCaretRange(version string) (*Range, error) {
 // ~1.2.3 := >=1.2.3 <1.3.0
 // ~1.2.3-pre := >=1.2.3-pre <1.2.3 OR >=1.2.3 <1.2.4 (for prerelease handling)
 func (p *Parser) parseTildeRange(version string) (*Range, error) {
+	if version == "" || version == "*" || version == "x" || version == "X" {
+		return Unbounded(), nil
+	}
+	if strings.HasSuffix(version, ".x") || strings.HasSuffix(version, ".X") || strings.HasSuffix(version, ".*") {
+		return p.parseXRange(version)
+	}
+
 	v, err := ParseVersion(version)
 	if err != nil {
 		return nil, err
 	}
 
-	// If there's a prerelease, we need special handling
-	// npm semver only matches prereleases if they're on the same major.minor.patch
-	if v.Prerelease != "" {
-		// Create two intervals:
-		// 1. Prereleases from the specified version to the release version
-		// 2. Release versions for patch updates
-		baseVersion := fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch)
-		nextPatch := fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch+1)
-
-		return NewRange([]Interval{
-			// Prerelease interval: >=version <baseVersion
-			NewInterval(version, baseVersion, true, false),
-			// Release interval: >=baseVersion <nextPatch
-			NewInterval(baseVersion, nextPatch, true, false),
-		}), nil
-	}
-
-	segments := strings.Count(version, ".") + 1
+	base := strings.SplitN(version, "+", 2)[0] //nolint:mnd
+	base = strings.SplitN(base, "-", 2)[0]     //nolint:mnd
+	segments := strings.Count(base, ".") + 1
 
 	var upper string
 	if segments >= 2 { //nolint:mnd
@@ -596,36 +603,150 @@ func (p *Parser) parseTildeRange(version string) (*Range, error) {
 		upper = fmt.Sprintf("%d.0.0", v.Major+1)
 	}
 
-	return NewRange([]Interval{
+	r := NewRange([]Interval{
 		NewInterval(version, upper, true, false),
-	}), nil
+	})
+	if v.Prerelease != "" {
+		baseVersion := fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch)
+		nextPatch := fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch+1)
+		r.RawConstraints = []Interval{
+			NewInterval(version, baseVersion, true, false),
+			NewInterval(baseVersion, nextPatch, true, false),
+		}
+	}
+	return r, nil
 }
 
 // 1.x := >=1.0.0 <2.0.0
 func (p *Parser) parseXRange(s string) (*Range, error) {
-	s = strings.TrimSuffix(s, ".x")
-	s = strings.TrimSuffix(s, ".X")
-	s = strings.TrimSuffix(s, ".*")
+	return p.parseNpmPartialRange(s, "")
+}
 
-	parts := strings.Split(s, ".")
-	if len(parts) == 1 {
-		major := parts[0]
-		v, err := ParseVersion(major)
-		if err != nil {
-			return nil, err
-		}
-		return NewRange([]Interval{
-			NewInterval(fmt.Sprintf("%d.0.0", v.Major), fmt.Sprintf("%d.0.0", v.Major+1), true, false),
-		}), nil
-	}
-
-	v, err := ParseVersion(s)
+func (p *Parser) parseNpmPartialRange(version, operator string) (*Range, error) {
+	lower, upper, err := npmPartialBounds(version)
 	if err != nil {
 		return nil, err
 	}
-	return NewRange([]Interval{
-		NewInterval(fmt.Sprintf("%d.%d.0", v.Major, v.Minor), fmt.Sprintf("%d.%d.0", v.Major, v.Minor+1), true, false),
-	}), nil
+	if lower == "" {
+		return Unbounded(), nil
+	}
+	var r *Range
+	switch operator {
+	case "", "=":
+		r = NewRange([]Interval{NewInterval(lower, upper, true, false)})
+	case ">=":
+		r = NewRange([]Interval{NewInterval(lower, "", true, false)})
+	case ">":
+		r = NewRange([]Interval{NewInterval(upper, "", true, false)})
+	case "<=":
+		r = NewRange([]Interval{NewInterval("", upper, false, false)})
+	case "<":
+		r = NewRange([]Interval{NewInterval("", lower, false, false)})
+	default:
+		return nil, fmt.Errorf("invalid operator for npm partial range: %s", operator)
+	}
+	// Keep the established native-to-VERS rendering while containment uses
+	// the expanded interval above.
+	hasWildcard := strings.ContainsAny(version, "xX*")
+	switch {
+	case hasWildcard:
+		r.RawConstraints = []Interval{NewInterval(lower, upper, true, false)}
+	case operator == "" || operator == "=":
+		r.RawConstraints = []Interval{ExactInterval(lower)}
+	case operator == ">=":
+		r.RawConstraints = []Interval{NewInterval(lower, "", true, false)}
+	case operator == ">":
+		r.RawConstraints = []Interval{NewInterval(lower, "", false, false)}
+	case operator == "<=":
+		r.RawConstraints = []Interval{NewInterval("", lower, false, true)}
+	case operator == "<":
+		r.RawConstraints = []Interval{NewInterval("", lower, false, false)}
+	}
+	return r, nil
+}
+
+func npmPartialBounds(version string) (string, string, error) {
+	version = strings.TrimSpace(version)
+	if version == "" || version == "*" || version == "x" || version == "X" {
+		return "", "", nil
+	}
+	version = strings.TrimPrefix(strings.TrimPrefix(version, "v"), "V")
+	segments := strings.Split(version, ".")
+	if len(segments) > 3 { //nolint:mnd
+		return "", "", fmt.Errorf("invalid npm partial version: %s", version)
+	}
+	parts := make([]int, 0, len(segments))
+	wildcard := false
+	for _, segment := range segments {
+		if segment == "*" || strings.EqualFold(segment, "x") {
+			wildcard = true
+			continue
+		}
+		if wildcard || !isDigits(segment) {
+			return "", "", fmt.Errorf("invalid npm partial version: %s", version)
+		}
+		value, err := strconv.Atoi(segment)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid npm partial version: %s", version)
+		}
+		parts = append(parts, value)
+	}
+	if len(parts) == 0 {
+		return "", "", nil
+	}
+	lowerParts := append([]int(nil), parts...)
+	for len(lowerParts) < 3 { //nolint:mnd
+		lowerParts = append(lowerParts, 0)
+	}
+	upperParts := append([]int(nil), lowerParts...)
+	upperParts[len(parts)-1]++
+	for index := len(parts); index < len(upperParts); index++ {
+		upperParts[index] = 0
+	}
+	return fmt.Sprintf("%d.%d.%d", lowerParts[0], lowerParts[1], lowerParts[2]),
+		fmt.Sprintf("%d.%d.%d", upperParts[0], upperParts[1], upperParts[2]), nil
+}
+
+func isPartialNpmVersion(version string) bool {
+	version = strings.TrimSpace(version)
+	version = strings.TrimPrefix(strings.TrimPrefix(version, "v"), "V")
+	segments := strings.Split(version, ".")
+	if len(segments) > 3 { //nolint:mnd
+		return false
+	}
+	partial := len(segments) < 3 //nolint:mnd
+	for _, segment := range segments {
+		if segment == "*" || strings.EqualFold(segment, "x") {
+			partial = true
+			continue
+		}
+		if !isDigits(segment) {
+			return false
+		}
+	}
+	return partial
+}
+
+func (p *Parser) parseNpmHyphenRange(lower, upper string) (*Range, error) {
+	min := lower
+	if isPartialNpmVersion(lower) {
+		var err error
+		min, _, err = npmPartialBounds(lower)
+		if err != nil {
+			return nil, err
+		}
+	}
+	max := upper
+	maxInclusive := true
+	if isPartialNpmVersion(upper) {
+		var err error
+		_, max, err = npmPartialBounds(upper)
+		if err != nil {
+			return nil, err
+		}
+		maxInclusive = false
+	}
+	return NewRange([]Interval{NewInterval(min, max, true, maxInclusive)}), nil
 }
 
 // gem: ~> 1.2, >= 1.0, < 2.0
@@ -683,9 +804,13 @@ func (p *Parser) parseGemPessimisticRange(version string) (*Range, error) {
 		head[len(head)-1] = incNumStr(head[len(head)-1])
 		upper = strings.Join(head, ".")
 	}
+	upper += ".a"
 	return &Range{
 		Intervals: []Interval{NewInterval(version, upper, true, false)},
-		Scheme:    schemeGem,
+		// RubyGems applies the upper bound to Version#release for ~>, while
+		// the established VERS rendering uses the bare bumped version.
+		RawConstraints: []Interval{NewInterval(version, strings.TrimSuffix(upper, ".a"), true, false)},
+		Scheme:         schemeGem,
 	}, nil
 }
 
@@ -743,11 +868,46 @@ func (p *Parser) parsePypiRange(s string) (*Range, error) {
 	if strings.HasPrefix(s, "===") {
 		return nil, fmt.Errorf("pypi arbitrary equality constraints are not supported: %s", s)
 	}
+	if strings.HasPrefix(s, "==") && strings.HasSuffix(strings.TrimSpace(s[2:]), ".*") {
+		return parsePypiPrefixRange(strings.TrimSpace(s[2:]), false)
+	}
+	if strings.HasPrefix(s, "!=") && strings.HasSuffix(strings.TrimSpace(s[2:]), ".*") {
+		return parsePypiPrefixRange(strings.TrimSpace(s[2:]), true)
+	}
 	if strings.HasPrefix(s, "==") {
 		s = "=" + strings.TrimSpace(s[2:])
 	}
 
 	return p.parseConstraints(s, schemePyPI)
+}
+
+func parsePypiPrefixRange(version string, exclude bool) (*Range, error) {
+	prefix := strings.TrimSuffix(version, ".*")
+	v, ok := parsePEP440(prefix)
+	if !ok || v.hasPre || v.hasPost || v.hasDev || len(v.local) > 0 {
+		return nil, fmt.Errorf("invalid pypi prefix constraint: %s", version)
+	}
+	lower := prefix + ".dev0"
+	upperRelease := append([]string(nil), v.release...)
+	upperRelease[len(upperRelease)-1] = incNumStr(upperRelease[len(upperRelease)-1])
+	upper := strings.Join(upperRelease, ".") + ".dev0"
+	if bang := strings.IndexByte(prefix, '!'); bang >= 0 {
+		epoch := trimLeadingZeros(v.epoch)
+		lower = epoch + "!" + prefix[bang+1:] + ".dev0"
+		upper = epoch + "!" + upper
+	}
+	if !exclude {
+		return &Range{
+			Intervals: []Interval{NewInterval(lower, upper, true, false)}, Scheme: schemePyPI,
+		}, nil
+	}
+	return &Range{
+		Intervals: []Interval{
+			NewInterval("", lower, false, false),
+			NewInterval(upper, "", true, false),
+		},
+		Scheme: schemePyPI,
+	}, nil
 }
 
 // parsePypiCompatibleRelease handles PEP 440 ~= by deriving the upper bound
@@ -848,6 +1008,13 @@ func (p *Parser) parseCargoRange(s string) (*Range, error) {
 	}
 	if s != "" && !strings.ContainsAny(s, "^~*<>=") {
 		return p.parseCaretRange(s)
+	}
+	if operator, version := extractOperator(s); operator == "<" && isPartialNpmVersion(version) {
+		lower, _, err := npmPartialBounds(version)
+		if err != nil {
+			return nil, err
+		}
+		return NewRange([]Interval{NewInterval("", lower+"-0", false, false)}), nil
 	}
 	return p.parseNpmRange(s)
 }

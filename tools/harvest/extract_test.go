@@ -94,6 +94,161 @@ func TestBuildTestFileNormalizesResultsAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestRangeExtractors(t *testing.T) {
+	tests := []struct {
+		name    string
+		extract func(map[string]string) ([]nativeRangeAssertion, error)
+		files   map[string]string
+		want    []nativeRangeAssertion
+	}{
+		{
+			name: "node-semver", extract: extractNodeSemverRanges,
+			files: map[string]string{
+				"test/fixtures/range-include.js": "['^1.0.0', '1.2.0']\n['<\\t2.0.0', '0.2.9']\n['*', '1.0.0-a', { includePrerelease: true }]\n",
+				"test/fixtures/range-exclude.js": "['^1.0.0', '2.0.0']\n",
+			},
+			want: []nativeRangeAssertion{
+				{nativeRange: "^1.0.0", version: "1.2.0", contains: true},
+				{nativeRange: "<\t2.0.0", version: "0.2.9", contains: true},
+				{nativeRange: "^1.0.0", version: "2.0.0", contains: false},
+			},
+		},
+		{
+			name: "pypi", extract: extractPyPIRanges,
+			files: map[string]string{"tests/test_specifiers.py": `
+("version", "spec_str", "expected")
+[(v, s, True) for v, s in [("1.2", ">=1")]]
++ [(v, s, False) for v, s in [("0.9", ">=1")]]
+def test_specifiers(self):
+`},
+			want: []nativeRangeAssertion{
+				{nativeRange: ">=1", version: "1.2", contains: true},
+				{nativeRange: ">=1", version: "0.9", contains: false},
+			},
+		},
+		{
+			name: "rubygems", extract: extractRubyGemsRanges,
+			files: map[string]string{"test/rubygems/test_gem_requirement.rb": `
+assert_satisfied_by "1.5", "~> 1.4"
+refute_satisfied_by "2.0", "~> 1.4"
+`},
+			want: []nativeRangeAssertion{
+				{nativeRange: "~> 1.4", version: "1.5", contains: true},
+				{nativeRange: "~> 1.4", version: "2.0", contains: false},
+			},
+		},
+		{
+			name: "composer", extract: extractComposerRanges,
+			files: map[string]string{"tests/VersionParserTest.php": `
+function simpleConstraints()
+    {
+        array('>=1.2', new Constraint('>=', '1.2.0.0-dev')),
+        array('<2', new Constraint('<', '2.0.0.0-dev')),
+    }
+`},
+			want: []nativeRangeAssertion{
+				{nativeRange: ">=1.2", version: "1.2.0.0-dev", contains: true},
+				{nativeRange: "<2", version: "2.0.0.0-dev", contains: false},
+			},
+		},
+		{
+			name: "pub", extract: extractPubRanges,
+			files: map[string]string{
+				"pkgs/pub_semver/test/version_constraint_test.dart": `
+var constraint = VersionConstraint.parse('>=1.2.3');
+expect(constraint, allows(Version.parse('1.2.3'), Version.parse('2.0.0')));
+expect(constraint, doesNotAllow(Version.parse('1.2.2')));
+expect(constraint.allows(Version.parse('3.0.0')), isFalse);
+    test('next', () {
+expect(constraint, allows(Version.parse('4.0.0')));
+				`,
+				"pkgs/pub_semver/test/version_range_test.dart": `
+var range = VersionRange(min: v123, includeMin: true,
+    max: Version.parse('2.0.0'));
+expect(range, allows(Version.parse('1.2.3')));
+expect(range, doesNotAllow(Version.parse('2.0.0')));
+`,
+				"pkgs/pub_semver/test/utils.dart": "final v123 = Version.parse('1.2.3');\n",
+			},
+			want: []nativeRangeAssertion{
+				{nativeRange: ">=1.2.3", version: "1.2.3", contains: true},
+				{nativeRange: ">=1.2.3", version: "2.0.0", contains: true},
+				{nativeRange: ">=1.2.3", version: "1.2.2", contains: false},
+				{nativeRange: ">=1.2.3 <2.0.0", version: "1.2.3", contains: true},
+				{nativeRange: ">=1.2.3 <2.0.0", version: "2.0.0", contains: false},
+			},
+		},
+		{
+			name: "cargo", extract: extractCargoRanges,
+			files: map[string]string{"tests/test_version_req.rs": `
+let ref r = req("^1.0.0");
+assert_match_all(r, &["1.0.0", "1.2.0"]);
+assert_match_none(r, &["2.0.0"]);
+}
+`},
+			want: []nativeRangeAssertion{
+				{nativeRange: "^1.0.0", version: "1.0.0", contains: true},
+				{nativeRange: "^1.0.0", version: "1.2.0", contains: true},
+				{nativeRange: "^1.0.0", version: "2.0.0", contains: false},
+			},
+		},
+		{
+			name: "maven", extract: extractMavenRanges,
+			files: map[string]string{"compat/maven-artifact/src/test/java/org/apache/maven/artifact/versioning/VersionRangeTest.java": `
+VersionRange range = VersionRange.createFromVersionSpec("[1.0,2.0)");
+assertTrue(range.containsVersion(new DefaultArtifactVersion("1.5")));
+assertFalse(range.containsVersion(new DefaultArtifactVersion("2.0")));
+`},
+			want: []nativeRangeAssertion{
+				{nativeRange: "[1.0,2.0)", version: "1.5", contains: true},
+				{nativeRange: "[1.0,2.0)", version: "2.0", contains: false},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := test.extract(test.files)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, test.want) {
+				t.Errorf("range assertions = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestBuildRangeTestFileNormalizesAndDeduplicates(t *testing.T) {
+	source := sourceSpec{name: "reference", scheme: "npm"}
+	file, err := buildRangeTestFile(source, []nativeRangeAssertion{
+		{nativeRange: "^1.0.0", version: "1.2.0", contains: true},
+		{nativeRange: "^1.0.0", version: "1.2.0", contains: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Tests) != 1 {
+		t.Fatalf("got %d tests, want 1", len(file.Tests))
+	}
+	if got := file.Tests[0].Input.Vers; got != "vers:npm/>=1.0.0|<2.0.0" {
+		t.Errorf("VERS input = %q", got)
+	}
+}
+
+func TestBuildRangeTestFileRepresentsEmptyRange(t *testing.T) {
+	source := sourceSpec{name: "reference", scheme: "cargo"}
+	file, err := buildRangeTestFile(source, []nativeRangeAssertion{
+		{nativeRange: "0.3.0, 0.4.0", version: "0.3.0", contains: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := file.Tests[0].Input.Vers; got == "vers:cargo/" {
+		t.Errorf("empty native range encoded as unbounded VERS %q", got)
+	}
+}
+
 func TestExtractGoReportsMissingTable(t *testing.T) {
 	_, err := extractGo(map[string]string{"semver/semver_test.go": "package semver\n"})
 	if err == nil {
