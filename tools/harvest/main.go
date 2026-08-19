@@ -39,6 +39,7 @@ type sourceSpec struct {
 	generatedRangeOutputFile string
 	referenceRuntimes        []string
 	evaluateRanges           rangeEvaluator
+	generateAdditional       additionalGenerator
 }
 
 type comparison struct {
@@ -60,6 +61,8 @@ type containmentQuery struct {
 }
 
 type rangeEvaluator func(string, []containmentQuery) ([]bool, error)
+
+type additionalGenerator func(map[string]string, string) ([]string, error)
 
 type testFile struct {
 	Schema string     `json:"$schema"`
@@ -198,6 +201,31 @@ var sources = []sourceSpec{
 		localPath: "golang/mod", sourceFiles: []string{"semver/semver_test.go"},
 		outputFile: "go_version_cmp_test.json", extract: extractGo,
 	},
+	{
+		name:       "univers",
+		repository: "https://github.com/package-url/univers.git",
+		commit:     "f365e4ee6eea8ebf1ad9219ccf4c4d523e822fb2",
+		license:    "Apache-2.0 AND BSD-3-Clause AND GPL-2.0-only AND MIT",
+		localPath:  "univers",
+		sourceFiles: []string{
+			"tests/test_debian_version.py",
+			"tests/test_debian_version.py.ABOUT",
+			"tests/data/rpmvercmp.at",
+			"tests/data/rpmvercmp.at.ABOUT",
+			"tests/test_gentoo_pkgcore.py",
+			"tests/test_gentoo_pkgcore.py.ABOUT",
+			"tests/data/alpine_test.txt",
+			"tests/data/alpine_test.txt.ABOUT",
+			"tests/test_pacman_vercmp.py",
+			"tests/test_pacman_vercmp.py.ABOUT",
+			"tests/test_conan_version_comparison.py",
+			"tests/test_conan_version_comparison.py.ABOUT",
+			"tests/test_conan_version_range.py",
+			"tests/test_conan_version_range.py.ABOUT",
+			"tests/data/npm_advisory.json",
+		},
+		generateAdditional: generateUnivers,
+	},
 }
 
 func main() {
@@ -306,6 +334,13 @@ func harvestSource(source sourceSpec, files map[string]string, checkout, testsDi
 			return nil, err
 		}
 		generatedFiles = append(generatedFiles, generatedFilename)
+	}
+	if source.generateAdditional != nil {
+		additional, err := source.generateAdditional(files, filepath.Dir(testsDir))
+		if err != nil {
+			return nil, fmt.Errorf("generate %s fixtures: %w", source.name, err)
+		}
+		generatedFiles = append(generatedFiles, additional...)
 	}
 
 	return generatedFiles, nil
