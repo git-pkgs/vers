@@ -115,6 +115,16 @@ func BenchmarkCompareWithScheme(b *testing.B) {
 		{name: "NuGet", a: "1.2.3-alpha.1", other: "1.2.3", scheme: "nuget"},
 		{name: "Debian", a: "1:1.2.3-1", other: "1:1.2.3-2", scheme: "deb"},
 		{name: "RPM", a: "1:1.2.3-1", other: "1:1.2.3-2", scheme: "rpm"},
+		// The remaining schemes have their own comparators rather than
+		// sharing the SemVer path, so allocation regressions in them only
+		// show up if they are measured here.
+		{name: "ALPM", a: "1.2.3-1", other: "1.2.4-1", scheme: "alpm"},
+		{name: "ALPMEpoch", a: "1:1.2.3-1", other: "2:1.2.3-1", scheme: "alpm"},
+		{name: "Conan", a: "1.2.3-rc1", other: "1.2.3", scheme: "conan"},
+		{name: "ConanBuild", a: "1.2.0-alpha+build1", other: "1.2-alpha+build2", scheme: "conan"},
+		{name: "Gentoo", a: "1.2.3_rc1", other: "1.2.3", scheme: "gentoo"},
+		{name: "GentooRevision", a: "1.2.3a_p1-r2", other: "1.2.3a_p2-r1", scheme: "gentoo"},
+		{name: "APK", a: "1.2.3_rc1", other: "1.2.3", scheme: "apk"},
 	}
 	for _, tt := range tests {
 		b.Run(tt.name, func(b *testing.B) {

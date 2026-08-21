@@ -39,19 +39,19 @@ func splitALPMVersion(s string) (epoch, version, release string, hasRelease bool
 	return epoch, version, release, hasRelease
 }
 
-func splitTypedSegments(s string) []typedSegment {
+// nextTypedSegment splits the leading run of same-kind bytes off s. ok is
+// false once s is exhausted, which is how an empty part reports that it has no
+// segments at all.
+func nextTypedSegment(s string) (seg typedSegment, rest string, ok bool) {
 	if s == "" {
-		return nil
+		return typedSegment{}, "", false
 	}
-	segments := make([]typedSegment, 0)
-	start, kind := 0, segmentKind(s[0])
-	for i := 1; i < len(s); i++ {
-		if next := segmentKind(s[i]); next != kind {
-			segments = append(segments, typedSegment{value: s[start:i], kind: kind})
-			start, kind = i, next
-		}
+	kind := segmentKind(s[0])
+	i := 1
+	for i < len(s) && segmentKind(s[i]) == kind {
+		i++
 	}
-	return append(segments, typedSegment{value: s[start:], kind: kind})
+	return typedSegment{value: s[:i], kind: kind}, s[i:], true
 }
 
 func segmentKind(c byte) int {
@@ -65,125 +65,139 @@ func segmentKind(c byte) int {
 }
 
 func compareALPMPart(a, b string) int {
-	pa, pb := splitTypedSegments(a), splitTypedSegments(b)
-	for i := 0; i < len(pa) || i < len(pb); i++ {
-		if i >= len(pa) {
-			if pb[i].kind == segmentAlpha {
+	for {
+		sa, restA, okA := nextTypedSegment(a)
+		sb, restB, okB := nextTypedSegment(b)
+		if !okA && !okB {
+			return 0
+		}
+		if !okA {
+			if sb.kind == segmentAlpha {
 				return 1
 			}
 			return -1
 		}
-		if i >= len(pb) {
-			if pa[i].kind == segmentAlpha {
+		if !okB {
+			if sa.kind == segmentAlpha {
 				return -1
 			}
 			return 1
 		}
-		a, b := pa[i], pb[i]
-		if a.kind != b.kind {
-			if a.kind == segmentDigit {
+		if sa.kind != sb.kind {
+			if sa.kind == segmentDigit {
 				return 1
 			}
-			if b.kind == segmentDigit {
+			if sb.kind == segmentDigit {
 				return -1
 			}
-			if a.kind == segmentOther {
+			if sa.kind == segmentOther {
 				return 1
 			}
 			return -1
 		}
 		var c int
-		switch a.kind {
+		switch sa.kind {
 		case segmentDigit:
-			c = cmpNumStr(a.value, b.value)
+			c = cmpNumStr(sa.value, sb.value)
 		case segmentAlpha:
-			c = cmpString(a.value, b.value)
+			c = cmpString(sa.value, sb.value)
 		default:
-			c = cmpInt(len(a.value), len(b.value))
+			c = cmpInt(len(sa.value), len(sb.value))
 		}
 		if c != 0 {
 			return c
 		}
+		a, b = restA, restB
 	}
-	return 0
-}
-
-type conanVersion struct {
-	main  []conanItem
-	pre   *conanVersion
-	build *conanVersion
-}
-
-type conanItem struct {
-	value string
-	num   bool
 }
 
 func compareConan(a, b string) int {
-	return compareConanVersion(parseConanVersion(a), parseConanVersion(b))
+	mainA, preA, hasPreA, buildA, hasBuildA := splitConanVersion(a)
+	mainB, preB, hasPreB, buildB, hasBuildB := splitConanVersion(b)
+
+	if c := compareConanMain(mainA, mainB); c != 0 {
+		return c
+	}
+	if c := compareOptionalConan(preA, hasPreA, preB, hasPreB, true); c != 0 {
+		return c
+	}
+	return compareOptionalConan(buildA, hasBuildA, buildB, hasBuildB, false)
 }
 
-func parseConanVersion(s string) conanVersion {
-	v := conanVersion{}
+// splitConanVersion separates s into its main component list plus the optional
+// prerelease and build parts, keeping every result as a view into s. The build
+// part is taken first so that a prerelease containing a plus sign, such as
+// 1.0-alpha+build, splits the same way the previous recursive parser did.
+func splitConanVersion(s string) (main, pre string, hasPre bool, build string, hasBuild bool) {
 	if i := strings.LastIndexByte(s, '+'); i >= 0 {
-		build := parseConanVersion(s[i+1:])
-		v.build, s = &build, s[:i]
+		build, hasBuild, s = s[i+1:], true, s[:i]
 	}
 	if i := strings.LastIndexByte(s, '-'); i >= 0 {
-		pre := parseConanVersion(s[i+1:])
-		v.pre, s = &pre, s[:i]
+		pre, hasPre, s = s[i+1:], true, s[:i]
 	}
-	for _, item := range strings.Split(s, ".") {
-		v.main = append(v.main, conanItem{value: item, num: isDigits(item)})
-	}
-	for len(v.main) > 0 && v.main[len(v.main)-1].num && cmpNumStr(v.main[len(v.main)-1].value, "0") == 0 {
-		v.main = v.main[:len(v.main)-1]
-	}
-	return v
+	return s, pre, hasPre, build, hasBuild
 }
 
-func compareConanVersion(a, b conanVersion) int {
-	if c := compareConanItems(a.main, b.main); c != 0 {
-		return c
-	}
-	if c := compareOptionalConan(a.pre, b.pre, true); c != 0 {
-		return c
-	}
-	return compareOptionalConan(a.build, b.build, false)
-}
-
-func compareConanItems(a, b []conanItem) int {
-	for i := 0; i < len(a) && i < len(b); i++ {
+func compareConanMain(a, b string) int {
+	na, nb := conanMainLen(a), conanMainLen(b)
+	for i := 0; i < na && i < nb; i++ {
+		pa, restA, _ := nextDotPart(a)
+		pb, restB, _ := nextDotPart(b)
 		var c int
-		if a[i].num && b[i].num {
-			c = cmpNumStr(a[i].value, b[i].value)
+		if isDigits(pa) && isDigits(pb) {
+			c = cmpNumStr(pa, pb)
 		} else {
-			c = cmpString(a[i].value, b[i].value)
+			c = cmpString(pa, pb)
 		}
 		if c != 0 {
 			return c
 		}
+		a, b = restA, restB
 	}
-	return cmpInt(len(a), len(b))
+	return cmpInt(na, nb)
 }
 
-func compareOptionalConan(a, b *conanVersion, prerelease bool) int {
-	if a == nil && b == nil {
+// conanMainLen counts the dot separated components in s, less the trailing
+// numeric zero components conan treats as absent so that 1.2.0 and 1.2 compare
+// equal.
+func conanMainLen(s string) int {
+	total, trailingZeros := 0, 0
+	for {
+		part, rest, more := nextDotPart(s)
+		total++
+		if isDigits(part) && cmpNumStr(part, "0") == 0 {
+			trailingZeros++
+		} else {
+			trailingZeros = 0
+		}
+		if !more {
+			return total - trailingZeros
+		}
+		s = rest
+	}
+}
+
+// compareOptionalConan orders a present part against an absent one. A missing
+// prerelease outranks a present one, while a missing build is outranked by a
+// present one. Two present parts recurse through compareConan, which stays
+// allocation free because every part is a view into the original string.
+func compareOptionalConan(a string, hasA bool, b string, hasB bool, prerelease bool) int {
+	if !hasA && !hasB {
 		return 0
 	}
-	if a == nil {
+	if !hasA {
 		if prerelease {
 			return 1
 		}
 		return -1
 	}
-	if b == nil {
+	if !hasB {
 		if prerelease {
 			return -1
 		}
 		return 1
 	}
-	return compareConanVersion(*a, *b)
+	return compareConan(a, b)
 }
 
 func compareGentoo(a, b string) int {
@@ -192,11 +206,12 @@ func compareGentoo(a, b string) int {
 	if va == vb {
 		return cmpNumStr(ra, rb)
 	}
-	pa, pb := strings.Split(va, "_"), strings.Split(vb, "_")
-	if c := compareGentooBase(pa[0], pb[0]); c != 0 {
+	baseA, suffixesA, hasSuffixA := splitGentooBase(va)
+	baseB, suffixesB, hasSuffixB := splitGentooBase(vb)
+	if c := compareGentooBase(baseA, baseB); c != 0 {
 		return c
 	}
-	if c := compareGentooSuffixes(pa[1:], pb[1:]); c != 0 {
+	if c := compareGentooSuffixes(suffixesA, hasSuffixA, suffixesB, hasSuffixB); c != 0 {
 		return c
 	}
 	return cmpNumStr(ra, rb)
@@ -210,66 +225,99 @@ func splitGentooRevision(s string) (version, revision string) {
 	return version, revision
 }
 
+// splitGentooBase separates the base component list from the underscore
+// separated suffixes. hasSuffixes distinguishes a version with no underscore
+// from one such as 1.2.3_ whose single suffix is empty.
+func splitGentooBase(s string) (base, suffixes string, hasSuffixes bool) {
+	if i := strings.IndexByte(s, '_'); i >= 0 {
+		return s[:i], s[i+1:], true
+	}
+	return s, "", false
+}
+
 func compareGentooBase(a, b string) int {
-	pa, la := splitGentooBase(a)
-	pb, lb := splitGentooBase(b)
-	for i := 0; i < len(pa) && i < len(pb); i++ {
-		if pa[i] == pb[i] {
-			continue
-		}
-		var c int
-		if i == 0 || (!strings.HasPrefix(pa[i], "0") && !strings.HasPrefix(pb[i], "0")) {
-			c = cmpNumStr(pa[i], pb[i])
-		} else {
-			c = cmpString(strings.TrimRight(pa[i], "0"), strings.TrimRight(pb[i], "0"))
-		}
-		if c != 0 {
+	a, letterA := splitGentooLetter(a)
+	b, letterB := splitGentooLetter(b)
+
+	for i := 0; ; i++ {
+		pa, restA, moreA := nextDotPart(a)
+		pb, restB, moreB := nextDotPart(b)
+		if c := compareGentooComponent(i, pa, pb); c != 0 {
 			return c
 		}
+		if !moreA || !moreB {
+			if moreA != moreB {
+				return cmpInt(boolInt(moreA), boolInt(moreB))
+			}
+			return cmpInt(letterA, letterB)
+		}
+		a, b = restA, restB
 	}
-	if len(pa) != len(pb) {
-		return cmpInt(len(pa), len(pb))
-	}
-	return cmpInt(la, lb)
 }
 
-func splitGentooBase(s string) ([]string, int) {
-	parts := strings.Split(s, ".")
-	letter := -1
-	last := parts[len(parts)-1]
-	if len(last) > 0 && isASCIIAlpha(last[len(last)-1]) {
-		letter = int(last[len(last)-1])
-		parts[len(parts)-1] = last[:len(last)-1]
+// splitGentooLetter strips the single trailing letter a version such as 1.2.3a
+// may carry. letter is -1 when there is none, which sorts it below any letter.
+func splitGentooLetter(s string) (rest string, letter int) {
+	if s != "" && isASCIIAlpha(s[len(s)-1]) {
+		return s[:len(s)-1], int(s[len(s)-1])
 	}
-	return parts, letter
+	return s, -1
 }
 
-func compareGentooSuffixes(a, b []string) int {
-	for i := 0; i < len(a) || i < len(b); i++ {
-		if i >= len(a) {
-			kind, number := parseGentooSuffix(b[i])
+// compareGentooComponent orders one pair of base components. Only the leading
+// component is always numeric; a later component starting with a zero is
+// compared as a fraction, with trailing zeros ignored.
+func compareGentooComponent(index int, a, b string) int {
+	if a == b {
+		return 0
+	}
+	if index == 0 || (!strings.HasPrefix(a, "0") && !strings.HasPrefix(b, "0")) {
+		return cmpNumStr(a, b)
+	}
+	return cmpString(strings.TrimRight(a, "0"), strings.TrimRight(b, "0"))
+}
+
+func compareGentooSuffixes(a string, hasA bool, b string, hasB bool) int {
+	for {
+		if !hasA && !hasB {
+			return 0
+		}
+		if !hasA {
+			suffix, _, _ := nextGentooSuffix(b)
+			kind, number := parseGentooSuffix(suffix)
 			if rank := gentooSuffixRank(kind); rank != 0 {
 				return cmpInt(0, rank)
 			}
 			return cmpNumStr("0", number)
 		}
-		if i >= len(b) {
-			kind, number := parseGentooSuffix(a[i])
+		if !hasB {
+			suffix, _, _ := nextGentooSuffix(a)
+			kind, number := parseGentooSuffix(suffix)
 			if rank := gentooSuffixRank(kind); rank != 0 {
 				return cmpInt(rank, 0)
 			}
 			return cmpNumStr(number, "0")
 		}
-		ka, na := parseGentooSuffix(a[i])
-		kb, nb := parseGentooSuffix(b[i])
+		suffixA, restA, moreA := nextGentooSuffix(a)
+		suffixB, restB, moreB := nextGentooSuffix(b)
+		ka, na := parseGentooSuffix(suffixA)
+		kb, nb := parseGentooSuffix(suffixB)
 		if c := cmpInt(gentooSuffixRank(ka), gentooSuffixRank(kb)); c != 0 {
 			return c
 		}
 		if c := cmpNumStr(na, nb); c != 0 {
 			return c
 		}
+		a, b, hasA, hasB = restA, restB, moreA, moreB
 	}
-	return 0
+}
+
+// nextGentooSuffix splits the leading underscore separated suffix off s.
+func nextGentooSuffix(s string) (suffix, rest string, more bool) {
+	if i := strings.IndexByte(s, '_'); i >= 0 {
+		return s[:i], s[i+1:], true
+	}
+	return s, "", false
 }
 
 func parseGentooSuffix(s string) (kind, number string) {
