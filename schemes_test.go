@@ -349,6 +349,9 @@ func TestSchemeAwareValidationAndNormalization(t *testing.T) {
 	if _, err := NormalizeWithScheme("x:1.0", "deb"); err == nil {
 		t.Error("NormalizeWithScheme accepted an invalid Debian version")
 	}
+	if IsStableWithScheme("1.2.3.4", "npm") || IsPrereleaseWithScheme("1.2.3.4", "npm") {
+		t.Error("scheme-aware classification accepted an invalid npm version")
+	}
 }
 
 func TestNativeRangeSchemeEdges(t *testing.T) {

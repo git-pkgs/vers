@@ -38,7 +38,7 @@ func Parse(versURI string) (*Range, error) {
 // ParseNative parses a native package manager version range into a Range.
 //
 // Supported schemes:
-//   - bazel: >=1.0, <2.0
+//   - bazel: >=1.0|<2.0
 //   - npm: ^1.2.3, ~1.2.3, 1.2.3 - 2.0.0, >=1.0.0 <2.0.0, ||
 //   - composer: ^1.2.3, ~1.2, 1.2.*, >=1.0 <2.0, ||
 //   - gem/rubygems: ~> 1.2, >= 1.0, < 2.0
@@ -135,21 +135,26 @@ func Valid(version string) bool {
 }
 
 // IsStableWithScheme checks whether a valid version has no prerelease part.
+// Bazel uses its module version format; other schemes use generic parsing.
 func IsStableWithScheme(version, scheme string) bool {
 	valid, prerelease := classifyVersionWithScheme(version, scheme)
 	return valid && !prerelease
 }
 
 // IsPrereleaseWithScheme checks whether a valid version has a prerelease part.
+// Bazel uses its module version format; other schemes use generic parsing.
 func IsPrereleaseWithScheme(version, scheme string) bool {
 	valid, prerelease := classifyVersionWithScheme(version, scheme)
 	return valid && prerelease
 }
 
 func classifyVersionWithScheme(version, scheme string) (bool, bool) {
+	if !validVersionForScheme(version, scheme) {
+		return false, false
+	}
 	if scheme == schemeBazel {
 		parsed, ok := parseBazelVersion(version)
-		return ok && version != "", len(parsed.prerelease) != 0
+		return ok, len(parsed.prerelease) != 0
 	}
 	parsed, err := ParseVersion(version)
 	return err == nil, err == nil && parsed.IsPrerelease()

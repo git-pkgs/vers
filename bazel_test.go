@@ -154,6 +154,13 @@ func TestBazelRangesThroughPublicAPI(t *testing.T) {
 	if !native.Contains("36.0.bcr.1") {
 		t.Error("ParseNative Bazel range does not contain 36.0.bcr.1")
 	}
+	bounded, err := ParseNative(">=36.0|<36.0.bcr.2", "bazel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bounded.Contains("36.0.bcr.1") || bounded.Contains("36.0.bcr.2") {
+		t.Error("ParseNative Bazel range did not apply both constraints")
+	}
 
 	satisfies, err := Satisfies("36.0.bcr.1", ">=36.0", "bazel")
 	if err != nil {
