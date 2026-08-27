@@ -13,6 +13,7 @@ const (
 	schemeALPM          = "alpm"
 	schemeAlpine        = "alpine"
 	schemeAPK           = "apk"
+	schemeBazel         = "bazel"
 	schemeCargo         = "cargo"
 	schemeComposer      = "composer"
 	schemeConan         = "conan"
@@ -330,7 +331,7 @@ func CompareWithScheme(a, b, scheme string) int {
 	if a == b {
 		return 0
 	}
-	if scheme == schemeGem || scheme == schemeRubyGems || scheme == schemeGo || scheme == schemeGolang {
+	if scheme == schemeBazel || scheme == schemeGem || scheme == schemeRubyGems || scheme == schemeGo || scheme == schemeGolang {
 		return compareFuncFor(scheme)(a, b)
 	}
 	if a == "" {
@@ -346,6 +347,8 @@ func CompareWithScheme(a, b, scheme string) int {
 // compareFuncFor returns the version comparison function for a scheme.
 func compareFuncFor(scheme string) func(a, b string) int {
 	switch scheme {
+	case schemeBazel:
+		return compareBazel
 	case schemeSemVer, schemeHex, schemeElixir, schemeNginx:
 		return compareSemver
 	case schemeNPM:
