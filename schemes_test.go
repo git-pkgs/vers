@@ -352,6 +352,38 @@ func TestSchemeAwareValidationAndNormalization(t *testing.T) {
 	if IsStableWithScheme("1.2.3.4", "npm") || IsPrereleaseWithScheme("1.2.3.4", "npm") {
 		t.Error("scheme-aware classification accepted an invalid npm version")
 	}
+
+	classifications := []struct {
+		scheme, version string
+		prerelease      bool
+	}{
+		{scheme: "pypi", version: "1.0.post1"},
+		{scheme: "pypi", version: "1.0.dev1", prerelease: true},
+		{scheme: "deb", version: "1.0-1"},
+		{scheme: "deb", version: "1.0~rc1-1", prerelease: true},
+		{scheme: "rpm", version: "1.0-1"},
+		{scheme: "rpm", version: "1.0~rc1-1", prerelease: true},
+		{scheme: "nuget", version: "1.2.3.4"},
+		{scheme: "nuget", version: "1.2.3-alpha", prerelease: true},
+		{scheme: "composer", version: "1.0-p1"},
+		{scheme: "composer", version: "dev-main", prerelease: true},
+		{scheme: "maven", version: "1.0-sp1"},
+		{scheme: "maven", version: "1.0-rc1", prerelease: true},
+		{scheme: "openssl", version: "1.1.1a"},
+		{scheme: "openssl", version: "3.0.0-alpha1", prerelease: true},
+		{scheme: "gentoo", version: "1.0_p1"},
+		{scheme: "gentoo", version: "1.0_rc1", prerelease: true},
+		{scheme: "conan", version: "1.0+build1"},
+		{scheme: "conan", version: "1.0-alpha", prerelease: true},
+	}
+	for _, tt := range classifications {
+		if got := IsPrereleaseWithScheme(tt.version, tt.scheme); got != tt.prerelease {
+			t.Errorf("IsPrereleaseWithScheme(%q, %q) = %v, want %v", tt.version, tt.scheme, got, tt.prerelease)
+		}
+		if got := IsStableWithScheme(tt.version, tt.scheme); got == tt.prerelease {
+			t.Errorf("IsStableWithScheme(%q, %q) = %v, want %v", tt.version, tt.scheme, got, !tt.prerelease)
+		}
+	}
 }
 
 func TestNativeRangeSchemeEdges(t *testing.T) {

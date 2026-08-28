@@ -22,6 +22,8 @@
 // See https://github.com/package-url/purl-spec/blob/main/VERSION-RANGE-SPEC.rst
 package vers
 
+import "strings"
+
 // Version is the library version.
 const Version = "0.6.0"
 
@@ -135,14 +137,12 @@ func Valid(version string) bool {
 }
 
 // IsStableWithScheme checks whether a valid version has no prerelease part.
-// Bazel uses its module version format; other schemes use generic parsing.
 func IsStableWithScheme(version, scheme string) bool {
 	valid, prerelease := classifyVersionWithScheme(version, scheme)
 	return valid && !prerelease
 }
 
 // IsPrereleaseWithScheme checks whether a valid version has a prerelease part.
-// Bazel uses its module version format; other schemes use generic parsing.
 func IsPrereleaseWithScheme(version, scheme string) bool {
 	valid, prerelease := classifyVersionWithScheme(version, scheme)
 	return valid && prerelease
@@ -152,12 +152,79 @@ func classifyVersionWithScheme(version, scheme string) (bool, bool) {
 	if !validVersionForScheme(version, scheme) {
 		return false, false
 	}
-	if scheme == schemeBazel {
+	version = strings.TrimSpace(version)
+
+	switch canonicalScheme(scheme) {
+	case schemeBazel:
 		parsed, ok := parseBazelVersion(version)
 		return ok, len(parsed.prerelease) != 0
+	case schemePyPI:
+		parsed, ok := parsePEP440(version)
+		return ok, parsed.hasPre || parsed.hasDev
+	case schemeComposer:
+		if isComposerBranchVersion(version) || composerNumericBranchRegex.MatchString(version) {
+			return true, true
+		}
+		parsed, ok := parseComposerVersion(version)
+		return ok, parsed.stability < composerStabilityStable
+	case schemeNuGet:
+		return true, parseNuGetVersion(version).prerelease != ""
+	case schemeDeb:
+		_, upstream, revision := splitDebianVersion(version)
+		return true, strings.Contains(upstream, "~") || strings.Contains(revision, "~")
+	case schemeRPM:
+		_, releaseVersion, release := splitRPMVersion(version)
+		return true, strings.Contains(releaseVersion, "~") || strings.Contains(release, "~")
+	case schemeMaven:
+		return true, mavenVersionIsPrerelease(version)
+	case schemeOpenSSL:
+		parsed, ok := parseOpenSSLVersion(version)
+		if !ok {
+			return false, false
+		}
+		if cmpNumStr(parsed.core[0], "3") >= 0 {
+			return true, strings.HasPrefix(parsed.patch, "-")
+		}
+		return true, strings.HasPrefix(parsed.patch, "-alpha") || strings.HasPrefix(parsed.patch, "-beta")
+	case schemeGentoo, schemeAPK:
+		return true, gentooVersionIsPrerelease(version)
+	case schemeConan:
+		_, _, prerelease, _, _ := splitConanVersion(version)
+		return true, prerelease
+	case schemeLexicographic, schemeDatetime, schemeIntDot, schemeNginx, schemeALPM:
+		return true, false
 	}
+
 	parsed, err := ParseVersion(version)
 	return err == nil, err == nil && parsed.IsPrerelease()
+}
+
+func mavenVersionIsPrerelease(version string) bool {
+	releaseOrder := mavenQualifierOrder[""]
+	for _, component := range parseMavenVersion(version) {
+		if component.isNumeric {
+			continue
+		}
+		order, _ := getMavenQualifierOrder(component.qualifier)
+		if order < releaseOrder {
+			return true
+		}
+	}
+	return false
+}
+
+func gentooVersionIsPrerelease(version string) bool {
+	version, _ = splitGentooRevision(version)
+	_, suffixes, more := splitGentooBase(version)
+	for more {
+		suffix, rest, hasMore := nextGentooSuffix(suffixes)
+		kind, _ := parseGentooSuffix(suffix)
+		if gentooSuffixRank(kind) < 0 {
+			return true
+		}
+		suffixes, more = rest, hasMore
+	}
+	return false
 }
 
 // Normalize normalizes a version string to a consistent format.
