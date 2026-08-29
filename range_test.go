@@ -497,6 +497,28 @@ func TestRangeUnionInheritsScheme(t *testing.T) {
 	if got := typed.Intersect(generic).Scheme; got != "pypi" {
 		t.Errorf("Intersect scheme (reversed) = %q, want pypi", got)
 	}
+
+	typedEmpty, _ := Parse("vers:pypi/")
+	if got := typedEmpty.Union(generic).Scheme; got != "pypi" {
+		t.Errorf("Union with typed empty operand scheme = %q, want pypi", got)
+	}
+	if got := generic.Union(typedEmpty).Scheme; got != "pypi" {
+		t.Errorf("Union with typed empty operand (reversed) scheme = %q, want pypi", got)
+	}
+}
+
+func TestRangeAlgebraDedupsEquivalentExclusions(t *testing.T) {
+	left, _ := Parse("vers:semver/>=1.0.0")
+	right, _ := Parse("vers:semver/>=1.0.0")
+	left = left.Exclude("1.5")
+	right = right.Exclude("1.5.0")
+
+	if got := left.Union(right).Exclusions; len(got) != 1 {
+		t.Errorf("Union exclusions = %v, want one entry", got)
+	}
+	if got := left.Intersect(right).Exclusions; len(got) != 1 {
+		t.Errorf("Intersect exclusions = %v, want one entry", got)
+	}
 }
 
 func TestRangeString(t *testing.T) {

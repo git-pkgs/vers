@@ -2,7 +2,6 @@ package vers
 
 import (
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 )
@@ -273,14 +272,14 @@ func (r *Range) MinimumVersion() (string, bool) {
 // The operands are assumed to use compatible schemes; use UnionChecked to
 // have that verified.
 func (r *Range) Union(other *Range) *Range {
-	if r.IsEmpty() {
-		return other
+	left, right := rangesWithCommonScheme(r, other)
+	if left.IsEmpty() {
+		return right
 	}
-	if other.IsEmpty() {
-		return r
+	if right.IsEmpty() {
+		return left
 	}
 
-	left, right := rangesWithCommonScheme(r, other)
 	cmp := compareFuncFor(left.Scheme)
 
 	// Combine all intervals
@@ -300,7 +299,7 @@ func (r *Range) Union(other *Range) *Range {
 		}
 	}
 	for _, e := range right.Exclusions {
-		if left.Contains(e) || slices.Contains(exclusions, e) {
+		if left.Contains(e) || containsExclusion(exclusions, e, cmp) {
 			continue
 		}
 		exclusions = append(exclusions, e)
@@ -373,7 +372,7 @@ func (r *Range) Intersect(other *Range) *Range {
 	exclusions := make([]string, 0, len(left.Exclusions)+len(right.Exclusions))
 	exclusions = append(exclusions, left.Exclusions...)
 	for _, e := range right.Exclusions {
-		if !slices.Contains(exclusions, e) {
+		if !containsExclusion(exclusions, e, cmp) {
 			exclusions = append(exclusions, e)
 		}
 	}
@@ -398,6 +397,15 @@ func checkRangeSchemes(a, b *Range) error {
 		return fmt.Errorf("cannot combine %q and %q version schemes", a.Scheme, b.Scheme)
 	}
 	return nil
+}
+
+func containsExclusion(exclusions []string, version string, cmp func(a, b string) int) bool {
+	for _, existing := range exclusions {
+		if cmp(existing, version) == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func rangesWithCommonScheme(a, b *Range) (*Range, *Range) {
