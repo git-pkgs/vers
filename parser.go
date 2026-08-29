@@ -317,6 +317,9 @@ func (p *Parser) parseConstraints(constraintsStr, scheme string) (*Range, error)
 		if err != nil {
 			return nil, err
 		}
+		if scheme == schemeBazel && !validVersionForScheme(constraint.Version, scheme) {
+			return nil, fmt.Errorf("invalid %s version: %s", scheme, constraint.Version)
+		}
 
 		if constraint.IsExclusion() {
 			exclusions = append(exclusions, constraint.Version)

@@ -27,6 +27,9 @@ func NewRange(intervals []Interval) *Range {
 func (r *Range) Contains(version string) bool {
 	scheme := canonicalScheme(r.Scheme)
 	cmp := compareFuncFor(r.Scheme)
+	if scheme == schemeBazel && !validVersionForScheme(version, scheme) {
+		return false
+	}
 	if scheme == schemeCargo {
 		cmp = compareSemver
 	}

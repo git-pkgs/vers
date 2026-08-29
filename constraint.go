@@ -29,15 +29,14 @@ func ParseConstraintWithScheme(s, scheme string) (*Constraint, error) {
 }
 
 // parseConstraintWithScheme parses a constraint with scheme-specific handling.
-// For Go/golang schemes, the v prefix is preserved.
+// For Go/golang and Bazel schemes, the v prefix is preserved.
 func parseConstraintWithScheme(s, scheme string) (*Constraint, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil, fmt.Errorf("empty constraint")
 	}
 
-	// Go versions preserve the v prefix
-	preserveVPrefix := scheme == schemeGo || scheme == schemeGolang
+	preserveVPrefix := scheme == schemeGo || scheme == schemeGolang || scheme == schemeBazel
 
 	operator := constraintOperator(s)
 	if operator != "" {
