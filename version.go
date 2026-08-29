@@ -380,9 +380,7 @@ func compareFuncFor(scheme string) func(a, b string) int {
 	case schemeIntDot:
 		return compareIntDot
 	case schemeAPK, schemeAlpine:
-		// This covers the vendored Alpine cases, but is not a full apk-tools
-		// implementation; APK has additional VCS suffix and letter rules.
-		return compareGentoo
+		return compareAPK
 	case schemeGentoo:
 		return compareGentoo
 	case schemeALPM:

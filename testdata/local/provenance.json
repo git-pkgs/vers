@@ -178,6 +178,18 @@
         "tests/conan_univers_range_test.json",
         "data/npm_advisory.json"
       ]
+    },
+    {
+      "repository": "https://github.com/alpinelinux/apk-tools.git",
+      "commit": "900a3f5280bfad7ea22eda7de46d0d4c0c9ce8f2",
+      "license": "GPL-2.0-only",
+      "source_files": [
+        "src/version.c",
+        "test/unit/version.data"
+      ],
+      "generated_files": [
+        "data/apk_version.data"
+      ]
     }
   ]
 }
