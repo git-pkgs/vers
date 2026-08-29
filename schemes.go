@@ -10,6 +10,7 @@ type semverValue struct {
 }
 
 func compareSemver(a, b string) int {
+	a, b = strings.TrimSpace(a), strings.TrimSpace(b)
 	va, okA := parseSemverValue(a)
 	vb, okB := parseSemverValue(b)
 	if !okA || !okB {
@@ -23,11 +24,8 @@ func compareSemver(a, b string) int {
 	return compareSemverPrereleaseStrings(va.pre, vb.pre)
 }
 
-func compareNPM(a, b string) int {
-	return compareSemver(strings.TrimSpace(a), strings.TrimSpace(b))
-}
-
 func compareCargo(a, b string) int {
+	a, b = strings.TrimSpace(a), strings.TrimSpace(b)
 	comparison := compareSemver(a, b)
 	if comparison != 0 {
 		return comparison
