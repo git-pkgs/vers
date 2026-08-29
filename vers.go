@@ -186,8 +186,10 @@ func classifyVersionWithScheme(version, scheme string) (bool, bool) {
 			return true, strings.HasPrefix(parsed.patch, "-")
 		}
 		return true, strings.HasPrefix(parsed.patch, "-alpha") || strings.HasPrefix(parsed.patch, "-beta")
-	case schemeGentoo, schemeAPK:
+	case schemeGentoo:
 		return true, gentooVersionIsPrerelease(version)
+	case schemeAPK:
+		return true, apkVersionIsPrerelease(version)
 	case schemeConan:
 		_, _, prerelease, _, _ := splitConanVersion(version)
 		return true, prerelease

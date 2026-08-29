@@ -45,7 +45,9 @@ func validVersionForScheme(version, scheme string) bool { //nolint:gocyclo
 	case schemeOpenSSL:
 		_, ok := parseOpenSSLVersion(version)
 		return ok
-	case schemeMaven, schemeLexicographic, schemeDatetime, schemeAPK, schemeAlpine, schemeGentoo, schemeALPM, schemeConan:
+	case schemeAPK, schemeAlpine:
+		return validAPKVersion(version)
+	case schemeMaven, schemeLexicographic, schemeDatetime, schemeGentoo, schemeALPM, schemeConan:
 		return !strings.ContainsAny(version, " \t\r\n")
 	default:
 		return Valid(version)
