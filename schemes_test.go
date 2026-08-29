@@ -294,6 +294,25 @@ func TestSchemeAwareSharedAPIs(t *testing.T) {
 	}
 }
 
+func TestSemverComparisonTrimsWhitespace(t *testing.T) {
+	for _, scheme := range []string{"semver", "hex", "cargo", "npm"} {
+		if got := CompareWithScheme(" 1.0.0 ", "1.0.0", scheme); got != 0 {
+			t.Errorf("CompareWithScheme(%q, %q, %q) = %d, want 0", " 1.0.0 ", "1.0.0", scheme, got)
+		}
+		if got := CompareWithScheme(" 1.0.0-alpha ", "1.0.0", scheme); got >= 0 {
+			t.Errorf("CompareWithScheme(%q, %q, %q) = %d, want < 0", " 1.0.0-alpha ", "1.0.0", scheme, got)
+		}
+	}
+
+	r, err := Parse("vers:semver/>=1.0.0|<2.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Contains(" 1.5.0 ") {
+		t.Error("semver range should contain a version with surrounding whitespace")
+	}
+}
+
 func TestCheckedRangeAlgebraRejectsMixedSchemes(t *testing.T) {
 	pypi, _ := Parse("vers:pypi/>=1.0")
 	maven, _ := Parse("vers:maven/<2.0")

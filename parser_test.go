@@ -548,6 +548,29 @@ func TestToVersString(t *testing.T) {
 	}
 }
 
+func TestToVersStringCanonicalizesScheme(t *testing.T) {
+	gem, err := ParseNative("~> 1.2", "rubygems")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ToVersString(gem, "rubygems"); got != "vers:gem/>=1.2|<2" {
+		t.Errorf("ToVersString with alias scheme = %q, want vers:gem/>=1.2|<2", got)
+	}
+
+	untyped := NewRange([]Interval{GreaterThanInterval("v1.2.3", true)})
+	if got := ToVersString(untyped, "golang"); got != "vers:go/>=v1.2.3" {
+		t.Errorf("ToVersString untyped with alias = %q, want vers:go/>=v1.2.3", got)
+	}
+
+	npm, err := ParseNative("^1.2.3", "npm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ToVersString(npm, "pypi"); got != "vers:npm/>=1.2.3|<2.0.0" {
+		t.Errorf("ToVersString ignored typed range scheme = %q, want vers:npm/>=1.2.3|<2.0.0", got)
+	}
+}
+
 func TestToVersStringEncodesMetacharacters(t *testing.T) {
 	parser := NewParser()
 

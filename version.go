@@ -349,10 +349,8 @@ func compareFuncFor(scheme string) func(a, b string) int {
 	switch scheme {
 	case schemeBazel:
 		return compareBazel
-	case schemeSemVer, schemeHex, schemeElixir, schemeNginx:
+	case schemeSemVer, schemeHex, schemeElixir, schemeNginx, schemeNPM:
 		return compareSemver
-	case schemeNPM:
-		return compareNPM
 	case schemeCargo:
 		return compareCargo
 	case schemeGo, schemeGolang:

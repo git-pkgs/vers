@@ -171,8 +171,13 @@ func (p *Parser) parseNative(constraint string, scheme string) (*Range, error) {
 	}
 }
 
-// ToVersString converts a Range back to a vers URI string.
+// ToVersString converts a Range back to a vers URI string. The scheme is
+// canonicalized; when the range already has a scheme it takes precedence.
 func (p *Parser) ToVersString(r *Range, scheme string) string {
+	if r.Scheme != "" {
+		scheme = r.Scheme
+	}
+	scheme = canonicalScheme(scheme)
 	if r.IsUnbounded() && len(r.Exclusions) == 0 && len(r.RawConstraints) == 0 {
 		return fmt.Sprintf("vers:%s/*", scheme)
 	}

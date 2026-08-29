@@ -404,6 +404,123 @@ func TestRangeExclude(t *testing.T) {
 	}
 }
 
+func TestRangeExcludePreservesRawConstraints(t *testing.T) {
+	original, err := ParseNative(">=1.0, <2.0", "gem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(original.RawConstraints) == 0 {
+		t.Fatal("test precondition: native range should carry raw constraints")
+	}
+
+	excluded := original.Exclude("1.5")
+	if excluded.Contains("1.5") {
+		t.Error("excluded version should not be contained")
+	}
+	if len(excluded.RawConstraints) != len(original.RawConstraints) {
+		t.Errorf("Exclude dropped RawConstraints: got %d, want %d", len(excluded.RawConstraints), len(original.RawConstraints))
+	}
+
+	serialized := ToVersString(excluded, "gem")
+	roundTripped, err := Parse(serialized)
+	if err != nil {
+		t.Fatalf("Parse(%q): %v", serialized, err)
+	}
+	if roundTripped.Contains("1.5") || !roundTripped.Contains("1.4") || roundTripped.Contains("2.0") {
+		t.Errorf("serialized exclusion did not round-trip: %q", serialized)
+	}
+}
+
+func TestRangeExcludeIgnoresIrrelevantVersion(t *testing.T) {
+	original, err := Parse("vers:npm/>=1.0.0|<2.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	unchanged := original.Exclude("3.0.0")
+	if len(unchanged.Exclusions) != 0 {
+		t.Errorf("Exclude added an irrelevant version: %v", unchanged.Exclusions)
+	}
+	if got, want := ToVersString(unchanged, "npm"), ToVersString(original, "npm"); got != want {
+		t.Errorf("Exclude changed serialization for a version outside the range: %q vs %q", got, want)
+	}
+
+	stillExcluded := original.Exclude("1.5.0").Exclude("1.5.0")
+	if len(stillExcluded.Exclusions) != 1 {
+		t.Errorf("Exclude added a duplicate exclusion: %v", stillExcluded.Exclusions)
+	}
+}
+
+func TestRangeUnionExclusionRetention(t *testing.T) {
+	base, _ := Parse("vers:npm/>=1.0.0")
+	excluded := base.Exclude("1.5.0")
+	later, _ := Parse("vers:npm/>=2.0.0")
+
+	if excluded.Union(later).Contains("1.5.0") {
+		t.Error("Union should keep an exclusion the other operand does not contain")
+	}
+	if later.Union(excluded).Contains("1.5.0") {
+		t.Error("Union should keep an exclusion the other operand does not contain (reversed)")
+	}
+
+	serialized := ToVersString(excluded.Union(later), "npm")
+	roundTripped, err := Parse(serialized)
+	if err != nil {
+		t.Fatalf("Parse(%q): %v", serialized, err)
+	}
+	if roundTripped.Contains("1.5.0") {
+		t.Errorf("serialized union lost the exclusion: %q", serialized)
+	}
+
+	covering, _ := Parse("vers:npm/>=1.4.0")
+	if !excluded.Union(covering).Contains("1.5.0") {
+		t.Error("Union should drop an exclusion the other operand contains")
+	}
+	if !covering.Union(excluded).Contains("1.5.0") {
+		t.Error("Union should drop an exclusion the other operand contains (reversed)")
+	}
+}
+
+func TestRangeUnionInheritsScheme(t *testing.T) {
+	generic := NewRange([]Interval{GreaterThanInterval("1.0.dev1", true)})
+	typed, _ := Parse("vers:pypi/<2.0")
+
+	if got := generic.Union(typed).Scheme; got != "pypi" {
+		t.Errorf("Union scheme = %q, want pypi", got)
+	}
+	if got := typed.Union(generic).Scheme; got != "pypi" {
+		t.Errorf("Union scheme (reversed) = %q, want pypi", got)
+	}
+	if got := generic.Intersect(typed).Scheme; got != "pypi" {
+		t.Errorf("Intersect scheme = %q, want pypi", got)
+	}
+	if got := typed.Intersect(generic).Scheme; got != "pypi" {
+		t.Errorf("Intersect scheme (reversed) = %q, want pypi", got)
+	}
+
+	typedEmpty, _ := Parse("vers:pypi/")
+	if got := typedEmpty.Union(generic).Scheme; got != "pypi" {
+		t.Errorf("Union with typed empty operand scheme = %q, want pypi", got)
+	}
+	if got := generic.Union(typedEmpty).Scheme; got != "pypi" {
+		t.Errorf("Union with typed empty operand (reversed) scheme = %q, want pypi", got)
+	}
+}
+
+func TestRangeAlgebraDedupsEquivalentExclusions(t *testing.T) {
+	left, _ := Parse("vers:semver/>=1.0.0")
+	right, _ := Parse("vers:semver/>=1.0.0")
+	left = left.Exclude("1.5")
+	right = right.Exclude("1.5.0")
+
+	if got := left.Union(right).Exclusions; len(got) != 1 {
+		t.Errorf("Union exclusions = %v, want one entry", got)
+	}
+	if got := left.Intersect(right).Exclusions; len(got) != 1 {
+		t.Errorf("Intersect exclusions = %v, want one entry", got)
+	}
+}
+
 func TestRangeString(t *testing.T) {
 	tests := []struct {
 		name string

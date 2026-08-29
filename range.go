@@ -269,49 +269,56 @@ func (r *Range) MinimumVersion() (string, bool) {
 }
 
 // Union returns a new Range that is the union of this range and another.
+// The operands are assumed to use compatible schemes; use UnionChecked to
+// have that verified.
 func (r *Range) Union(other *Range) *Range {
-	if r.IsEmpty() {
-		return other
+	left, right := rangesWithCommonScheme(r, other)
+	if left.IsEmpty() {
+		return right
 	}
-	if other.IsEmpty() {
-		return r
+	if right.IsEmpty() {
+		return left
 	}
+
+	cmp := compareFuncFor(left.Scheme)
 
 	// Combine all intervals
-	allIntervals := make([]Interval, 0, len(r.Intervals)+len(other.Intervals))
-	allIntervals = append(allIntervals, r.Intervals...)
-	allIntervals = append(allIntervals, other.Intervals...)
-
-	cmp := compareFuncFor(r.Scheme)
+	allIntervals := make([]Interval, 0, len(left.Intervals)+len(right.Intervals))
+	allIntervals = append(allIntervals, left.Intervals...)
+	allIntervals = append(allIntervals, right.Intervals...)
 
 	// Merge overlapping intervals for containment checking
 	merged := mergeIntervals(allIntervals, cmp)
 
-	// Combine exclusions (intersection of exclusions for union)
-	exclusions := make([]string, 0)
-	for _, e := range r.Exclusions {
-		for _, oe := range other.Exclusions {
-			if cmp(e, oe) == 0 {
-				exclusions = append(exclusions, e)
-				break
-			}
+	// An exclusion survives the union only when the other operand does not
+	// independently supply the excluded version.
+	var exclusions []string
+	for _, e := range left.Exclusions {
+		if !right.Contains(e) {
+			exclusions = append(exclusions, e)
 		}
+	}
+	for _, e := range right.Exclusions {
+		if left.Contains(e) || containsExclusion(exclusions, e, cmp) {
+			continue
+		}
+		exclusions = append(exclusions, e)
 	}
 
 	// Combine raw constraints (unmerged) for VERS output
-	rawConstraints := make([]Interval, 0, len(r.RawConstraints)+len(other.RawConstraints))
-	if len(r.RawConstraints) > 0 {
-		rawConstraints = append(rawConstraints, r.RawConstraints...)
+	rawConstraints := make([]Interval, 0, len(left.RawConstraints)+len(right.RawConstraints))
+	if len(left.RawConstraints) > 0 {
+		rawConstraints = append(rawConstraints, left.RawConstraints...)
 	} else {
-		rawConstraints = append(rawConstraints, r.Intervals...)
+		rawConstraints = append(rawConstraints, left.Intervals...)
 	}
-	if len(other.RawConstraints) > 0 {
-		rawConstraints = append(rawConstraints, other.RawConstraints...)
+	if len(right.RawConstraints) > 0 {
+		rawConstraints = append(rawConstraints, right.RawConstraints...)
 	} else {
-		rawConstraints = append(rawConstraints, other.Intervals...)
+		rawConstraints = append(rawConstraints, right.Intervals...)
 	}
 
-	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints, Scheme: r.Scheme}
+	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints, Scheme: left.Scheme}
 }
 
 // UnionChecked returns the union of ranges that use compatible schemes.
@@ -319,35 +326,38 @@ func (r *Range) UnionChecked(other *Range) (*Range, error) {
 	if err := checkRangeSchemes(r, other); err != nil {
 		return nil, err
 	}
-	left, right := rangesWithCommonScheme(r, other)
-	return left.Union(right), nil
+	return r.Union(other), nil
 }
 
-// Intersect returns a new Range that is the intersection of this range and another.
+// Intersect returns a new Range that is the intersection of this range and
+// another. The operands are assumed to use compatible schemes; use
+// IntersectChecked to have that verified.
 func (r *Range) Intersect(other *Range) *Range {
+	left, right := rangesWithCommonScheme(r, other)
+
 	// Combine raw constraints for VERS output (preserved even if result is empty)
-	rawConstraints := make([]Interval, 0, len(r.RawConstraints)+len(other.RawConstraints))
-	if len(r.RawConstraints) > 0 {
-		rawConstraints = append(rawConstraints, r.RawConstraints...)
+	rawConstraints := make([]Interval, 0, len(left.RawConstraints)+len(right.RawConstraints))
+	if len(left.RawConstraints) > 0 {
+		rawConstraints = append(rawConstraints, left.RawConstraints...)
 	} else {
-		rawConstraints = append(rawConstraints, r.Intervals...)
+		rawConstraints = append(rawConstraints, left.Intervals...)
 	}
-	if len(other.RawConstraints) > 0 {
-		rawConstraints = append(rawConstraints, other.RawConstraints...)
+	if len(right.RawConstraints) > 0 {
+		rawConstraints = append(rawConstraints, right.RawConstraints...)
 	} else {
-		rawConstraints = append(rawConstraints, other.Intervals...)
+		rawConstraints = append(rawConstraints, right.Intervals...)
 	}
 
-	if r.IsEmpty() || other.IsEmpty() {
-		return &Range{RawConstraints: rawConstraints, Scheme: r.Scheme}
+	if left.IsEmpty() || right.IsEmpty() {
+		return &Range{RawConstraints: rawConstraints, Scheme: left.Scheme}
 	}
 
-	cmp := compareFuncFor(r.Scheme)
+	cmp := compareFuncFor(left.Scheme)
 
 	// Intersect each pair of intervals
 	var result []Interval
-	for _, i1 := range r.Intervals {
-		for _, i2 := range other.Intervals {
+	for _, i1 := range left.Intervals {
+		for _, i2 := range right.Intervals {
 			intersection := i1.intersectCmp(i2, cmp)
 			if !intersection.isEmptyCmp(cmp) {
 				result = append(result, intersection)
@@ -359,22 +369,15 @@ func (r *Range) Intersect(other *Range) *Range {
 	merged := mergeIntervals(result, cmp)
 
 	// Combine exclusions (union of exclusions for intersection)
-	exclusions := make([]string, 0, len(r.Exclusions)+len(other.Exclusions))
-	exclusions = append(exclusions, r.Exclusions...)
-	for _, e := range other.Exclusions {
-		found := false
-		for _, existing := range exclusions {
-			if e == existing {
-				found = true
-				break
-			}
-		}
-		if !found {
+	exclusions := make([]string, 0, len(left.Exclusions)+len(right.Exclusions))
+	exclusions = append(exclusions, left.Exclusions...)
+	for _, e := range right.Exclusions {
+		if !containsExclusion(exclusions, e, cmp) {
 			exclusions = append(exclusions, e)
 		}
 	}
 
-	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints, Scheme: r.Scheme}
+	return &Range{Intervals: merged, Exclusions: exclusions, RawConstraints: rawConstraints, Scheme: left.Scheme}
 }
 
 // IntersectChecked returns the intersection of ranges that use compatible schemes.
@@ -382,8 +385,7 @@ func (r *Range) IntersectChecked(other *Range) (*Range, error) {
 	if err := checkRangeSchemes(r, other); err != nil {
 		return nil, err
 	}
-	left, right := rangesWithCommonScheme(r, other)
-	return left.Intersect(right), nil
+	return r.Intersect(other), nil
 }
 
 func checkRangeSchemes(a, b *Range) error {
@@ -397,6 +399,15 @@ func checkRangeSchemes(a, b *Range) error {
 	return nil
 }
 
+func containsExclusion(exclusions []string, version string, cmp func(a, b string) int) bool {
+	for _, existing := range exclusions {
+		if cmp(existing, version) == 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func rangesWithCommonScheme(a, b *Range) (*Range, *Range) {
 	scheme := a.Scheme
 	if scheme == "" {
@@ -407,16 +418,22 @@ func rangesWithCommonScheme(a, b *Range) (*Range, *Range) {
 	return &left, &right
 }
 
-// Exclude returns a new Range that excludes the given version.
+// Exclude returns a Range that excludes the given version. If the range does
+// not contain the version, the receiver is returned unchanged.
 func (r *Range) Exclude(version string) *Range {
+	if !r.Contains(version) {
+		return r
+	}
+
 	exclusions := make([]string, len(r.Exclusions), len(r.Exclusions)+1)
 	copy(exclusions, r.Exclusions)
 	exclusions = append(exclusions, version)
 
 	return &Range{
-		Intervals:  r.Intervals,
-		Exclusions: exclusions,
-		Scheme:     r.Scheme,
+		Intervals:      r.Intervals,
+		Exclusions:     exclusions,
+		RawConstraints: r.RawConstraints,
+		Scheme:         r.Scheme,
 	}
 }
 
