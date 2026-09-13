@@ -13,6 +13,7 @@ var (
 	composerOrRegex            = regexp.MustCompile(`\s*\|\|?\s*`)
 	composerStabilityFlagRegex = regexp.MustCompile(`(?i)^(.*?)@(dev|alpha|beta|rc|stable)$`)
 	composerVersionRegex       = regexp.MustCompile(`(?i)^v?([0-9]+(?:\.[0-9]+){0,3})(?:[-._]?([a-z]+)(?:[.-]?([0-9]+(?:[.-][0-9]+)*))?)?(?:\+[^\s]+)?$`)
+	composerValidVersionRegex  = regexp.MustCompile(`(?i)^v?[0-9]+(?:\.[0-9]+){0,3}(?:[-._]?(?:dev|a|alpha|b|beta|rc|(?-i:[sS])table|p|pl|patch)(?:[.-]?[0-9]+(?:[.-][0-9]+)*)?)?(?:\+[^\s]+)?$`)
 	pubVersionPrefixRegex      = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?`)
 )
 
@@ -528,7 +529,7 @@ func validComposerVersion(version string) bool {
 	if version == "" || strings.ContainsAny(version, " \t\r\n") {
 		return false
 	}
-	if _, ok := parseComposerVersion(version); ok {
+	if composerValidVersionRegex.MatchString(version) {
 		return true
 	}
 	return isComposerBranchVersion(version) || composerNumericBranchRegex.MatchString(version)

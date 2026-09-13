@@ -24,8 +24,7 @@ func validVersionForScheme(version, scheme string) bool { //nolint:gocyclo
 
 	switch scheme {
 	case schemePyPI:
-		_, ok := parsePEP440(version)
-		return ok
+		return pep440Regex.MatchString(version)
 	case schemeComposer:
 		return validComposerVersion(version)
 	case schemePub:
