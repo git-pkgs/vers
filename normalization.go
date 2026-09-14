@@ -89,16 +89,16 @@ func normalizeVersionForScheme(version, scheme string) (string, error) {
 }
 
 func validSemverLike(s string) bool {
-	m := SemanticVersionRegex.FindStringSubmatch(s)
-	if m == nil {
+	parsed, ok := parseSemverValue(s)
+	if !ok {
 		return false
 	}
-	for _, field := range []string{m[4], m[5]} {
+	for _, field := range []string{parsed.pre, semverBuild(s)} {
 		if field == "" {
 			continue
 		}
-		for _, part := range strings.Split(field, ".") {
-			if part == "" || strings.Trim(part, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-") != "" {
+		for part := range strings.SplitSeq(field, ".") {
+			if part == "" || !validGoIdentifier(part) {
 				return false
 			}
 		}
