@@ -650,13 +650,15 @@ func getMavenQualifierOrder(q string) (int, bool) {
 }
 
 func parseMavenVersion(s string) []mavenComponent {
-	var result []mavenComponent
-
 	// Maven versions are split by . and - AND on transitions between digits and letters
 	s = strings.ToLower(s)
 
 	// Split on delimiters and digit/letter transitions, tracking separators
 	parts, afterDashFlags := splitMavenVersionWithSeparators(s)
+	var result []mavenComponent
+	if len(parts) > 0 {
+		result = make([]mavenComponent, 0, len(parts))
+	}
 
 	for i, part := range parts {
 		if part == "" {
@@ -719,11 +721,7 @@ func normalizeMavenComponents(components []mavenComponent) []mavenComponent {
 			baseEnd--
 		}
 		if baseEnd < firstSublistIdx {
-			// Rebuild: base without trailing zeros + sublist portion
-			newComponents := make([]mavenComponent, baseEnd)
-			copy(newComponents, components[:baseEnd])
-			newComponents = append(newComponents, components[firstSublistIdx:]...)
-			components = newComponents
+			components = append(components[:baseEnd], components[firstSublistIdx:]...)
 		}
 	} else if firstSublistIdx == -1 {
 		// No sublist - just remove trailing zeros from the end
