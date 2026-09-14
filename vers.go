@@ -25,7 +25,7 @@ package vers
 import "strings"
 
 // Version is the library version.
-const Version = "0.6.0"
+const Version = "0.7.1"
 
 // Parse parses a vers URI string into a Range.
 //
