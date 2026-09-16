@@ -60,6 +60,41 @@ func TestParseVersURI(t *testing.T) {
 	}
 }
 
+func TestParseVersURIStrict(t *testing.T) {
+	tests := []struct {
+		input   string
+		wantErr string
+	}{
+		{"vers:npm/", "constraints must not be empty"},
+		{"vers:npm/=1.0.0", "explicit equality comparator"},
+		{"vers:npm/==1.0.0", "explicit equality comparator"},
+		{"vers:lexicographic/1%092", "whitespace is not permitted"},
+		{"vers:lexicographic/1 2", "whitespace is not permitted"},
+		{"vers:lexicographic/1%202", ""},
+		{"vers:npm/1.0.0", ""},
+	}
+	for _, tt := range tests {
+		_, err := defaultParser.parseVersURI(tt.input, true)
+		if tt.wantErr == "" {
+			if err != nil {
+				t.Errorf("parseVersURI(%q, strict) error = %v, want nil", tt.input, err)
+			}
+		} else if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+			t.Errorf("parseVersURI(%q, strict) error = %v, want substring %q", tt.input, err, tt.wantErr)
+		}
+	}
+}
+
+func TestParseVersURILenientSpace(t *testing.T) {
+	r, err := defaultParser.parseVersURI("vers:lexicographic/1 2", false)
+	if err != nil {
+		t.Fatalf("lenient parse of literal space failed: %v", err)
+	}
+	if got := ToVersString(r, r.Scheme); got != "vers:lexicographic/1%202" {
+		t.Errorf("roundtrip = %q, want vers:lexicographic/1%%202", got)
+	}
+}
+
 func TestParseNpmRange(t *testing.T) {
 	tests := []struct {
 		name    string

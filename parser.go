@@ -28,7 +28,7 @@ func (p *Parser) parseVersURI(versURI string, requireCanonicalOrder bool) (*Rang
 	if !strings.HasPrefix(versURI, prefix) {
 		return nil, fmt.Errorf("invalid vers URI format: %s", versURI)
 	}
-	if strings.ContainsAny(versURI, " \t\r\n") {
+	if strings.ContainsAny(versURI, "\t\r\n") || (requireCanonicalOrder && strings.ContainsRune(versURI, ' ')) {
 		return nil, fmt.Errorf("non-canonical VERS: whitespace is not permitted")
 	}
 	remainder := versURI[len(prefix):]
@@ -40,6 +40,9 @@ func (p *Parser) parseVersURI(versURI string, requireCanonicalOrder bool) (*Rang
 	scheme := remainder[:slash]
 	constraintsStr := remainder[slash+1:]
 
+	if constraintsStr == "" && requireCanonicalOrder {
+		return nil, fmt.Errorf("non-canonical VERS: constraints must not be empty")
+	}
 	// Handle wildcard for unbounded range
 	if constraintsStr == "*" || constraintsStr == "" {
 		r := Unbounded()
@@ -67,6 +70,9 @@ func validateVersConstraints(constraints, scheme string, requireCanonicalOrder b
 	var previous *Constraint
 	previousRaw := ""
 	for _, raw := range strings.Split(constraints, "|") {
+		if requireCanonicalOrder && len(raw) > 0 && raw[0] == '=' {
+			return fmt.Errorf("non-canonical VERS: explicit equality comparator is not permitted")
+		}
 		operator := constraintOperator(raw)
 		version := raw[len(operator):]
 		if err := validateVersVersion(version, scheme); err != nil {
@@ -98,6 +104,9 @@ func validateVersVersion(version, scheme string) error {
 		if isLowerASCIIHex(version[i+1]) || isLowerASCIIHex(version[i+2]) {
 			return fmt.Errorf("non-canonical VERS: percent-encoding in version is not canonical")
 		}
+		if b := hexByte(version[i+1], version[i+2]); b == '\t' || b == '\r' || b == '\n' {
+			return fmt.Errorf("non-canonical VERS: whitespace is not permitted")
+		}
 		i += 2
 	}
 
@@ -119,6 +128,21 @@ func validateVersVersion(version, scheme string) error {
 
 func isASCIIHex(c byte) bool {
 	return isASCIIDigit(c) || c >= 'A' && c <= 'F' || isLowerASCIIHex(c)
+}
+
+func hexByte(hi, lo byte) byte {
+	return hexNibble(hi)<<4 | hexNibble(lo)
+}
+
+func hexNibble(c byte) byte {
+	switch {
+	case isASCIIDigit(c):
+		return c - '0'
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10
+	default:
+		return c - 'a' + 10
+	}
 }
 
 func isLowerASCIIHex(c byte) bool {
