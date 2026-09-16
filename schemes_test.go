@@ -244,6 +244,9 @@ func TestExistingSchemeComparatorEdges(t *testing.T) {
 		{"maven", "1.999999999999999999999999", "1.2", 1},
 		{"lexicographic", "10", "2", -1},
 		{"intdot", "1.0.0.1", "1.0.0", 1},
+		{"intdot", "1.2beta", "1.2rc1", 0},
+		{"intdot", "1.10alpha", "1.3rc1", 1},
+		{"intdot", "1.2", "1.2.0", 0},
 		{"gentoo", "01", "1", 0},
 	}
 	for _, tt := range tests {

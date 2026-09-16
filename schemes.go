@@ -611,7 +611,17 @@ func compareRPMPart(a, b string) int { //nolint:gocyclo,gocognit
 	return 0
 }
 
+func intDotPrefix(s string) string {
+	for i := 0; i < len(s); i++ {
+		if s[i] != '.' && !isASCIIDigit(s[i]) {
+			return s[:i]
+		}
+	}
+	return s
+}
+
 func compareIntDot(a, b string) int {
+	a, b = intDotPrefix(a), intDotPrefix(b)
 	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
 	for i := 0; i < len(pa) || i < len(pb); i++ {
 		var va, vb string
