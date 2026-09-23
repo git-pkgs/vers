@@ -255,4 +255,4 @@ go test -bench=BenchmarkContains -benchmem
 
 ## License
 
-MIT
+[MIT](LICENSE).
