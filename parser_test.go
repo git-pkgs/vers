@@ -536,6 +536,24 @@ func TestToVersString(t *testing.T) {
 			"npm",
 			"vers:npm/>=1.0.0|<2.0.0",
 		},
+		{
+			"schemeless pypi calver range",
+			NewRange([]Interval{NewInterval("2016.11.0", "3003rc1", true, false)}),
+			"pypi",
+			"vers:pypi/>=2016.11.0|<3003rc1",
+		},
+		{
+			"schemeless pypi dev range",
+			NewRange([]Interval{NewInterval("0.5.0b3.dev13", "0.5.0b3.dev97", true, false)}),
+			"pypi",
+			"vers:pypi/>=0.5.0b3.dev13|<0.5.0b3.dev97",
+		},
+		{
+			"schemeless empty interval",
+			NewRange([]Interval{NewInterval("2.0", "1.0", true, false)}),
+			"pypi",
+			"vers:pypi/",
+		},
 	}
 
 	for _, tt := range tests {
