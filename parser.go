@@ -182,7 +182,7 @@ func (p *Parser) ToVersString(r *Range, scheme string) string {
 		return fmt.Sprintf("vers:%s/*", scheme)
 	}
 	// Check if empty but has raw constraints (preserve them for output)
-	if r.IsEmpty() && len(r.RawConstraints) == 0 {
+	if r.isEmptyFor(scheme) && len(r.RawConstraints) == 0 {
 		return fmt.Sprintf("vers:%s/", scheme)
 	}
 

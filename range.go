@@ -180,10 +180,14 @@ func samePEP440Release(left, right pep440Version) bool {
 
 // IsEmpty returns true if this range matches no versions.
 func (r *Range) IsEmpty() bool {
+	return r.isEmptyFor(r.Scheme)
+}
+
+func (r *Range) isEmptyFor(scheme string) bool {
 	if len(r.Intervals) == 0 {
 		return true
 	}
-	cmp := compareFuncFor(r.Scheme)
+	cmp := compareFuncFor(scheme)
 	for _, interval := range r.Intervals {
 		if !interval.isEmptyCmp(cmp) {
 			return false
