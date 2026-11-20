@@ -457,22 +457,92 @@ func (p *Parser) parseNpmRange(s string) (*Range, error) {
 	// Handle space-separated AND constraints
 	if strings.ContainsAny(s, " \t\r\n") && !strings.Contains(s, " - ") {
 		parts := tokenizeNpmConstraints(s)
+		ranges := make([]*Range, 0, len(parts))
 		var result *Range
-		for _, part := range parts {
+		for i, part := range parts {
 			r, err := p.parseNpmSingleRange(part)
 			if err != nil {
 				return nil, err
 			}
+			ranges = append(ranges, r)
 			if result == nil {
 				result = r
-			} else {
-				result = result.Intersect(r)
+				continue
 			}
+			result = result.Intersect(r)
+			if result.IsEmpty() {
+				return nil, npmUnsatisfiableError(parts, ranges, i)
+			}
+		}
+		if len(ranges) > 1 {
+			result.RawConstraints = npmIntersectedRaw(ranges)
 		}
 		return result, nil
 	}
 
 	return p.parseNpmSingleRange(s)
+}
+
+// npmIntersectedRaw returns the raw constraints of the comparators that set
+// the tightest lower and upper bound, since listing every comparator would
+// serialize as a union. It returns nil when the merged intervals should be
+// serialized instead.
+func npmIntersectedRaw(ranges []*Range) []Interval {
+	var out Interval
+	lower, upper := -1, -1
+	for i, r := range ranges {
+		raw := r.RawConstraints
+		if len(raw) == 0 {
+			raw = r.Intervals
+		}
+		if len(r.Intervals) != 1 || len(raw) != 1 {
+			return nil
+		}
+		bound := r.Intervals[0]
+		if bound.Min != "" && (lower < 0 || tighterLower(bound, ranges[lower].Intervals[0])) {
+			lower = i
+			out.Min, out.MinInclusive = raw[0].Min, raw[0].MinInclusive
+		}
+		if bound.Max != "" && (upper < 0 || tighterUpper(bound, ranges[upper].Intervals[0])) {
+			upper = i
+			out.Max, out.MaxInclusive = raw[0].Max, raw[0].MaxInclusive
+		}
+	}
+	if lower < 0 && upper < 0 {
+		return nil
+	}
+	return []Interval{out}
+}
+
+func tighterLower(a, b Interval) bool {
+	c := CompareVersions(a.Min, b.Min)
+	return c > 0 || (c == 0 && !a.MinInclusive && b.MinInclusive)
+}
+
+func tighterUpper(a, b Interval) bool {
+	c := CompareVersions(a.Max, b.Max)
+	return c < 0 || (c == 0 && !a.MaxInclusive && b.MaxInclusive)
+}
+
+// npmUnsatisfiableError names the comparator at index last and an earlier one
+// it cannot be satisfied together with.
+func npmUnsatisfiableError(parts []string, ranges []*Range, last int) error {
+	conflict := 0
+	for i := range last {
+		if ranges[i].Intersect(ranges[last]).IsEmpty() {
+			conflict = i
+			break
+		}
+	}
+	return fmt.Errorf("space-separated npm comparators are intersected: %s and %s match no version",
+		npmComparatorString(parts[conflict]), npmComparatorString(parts[last]))
+}
+
+func npmComparatorString(part string) string {
+	if strings.ContainsAny(part[:1], "<>=!~^") {
+		return part
+	}
+	return "=" + part
 }
 
 // tokenizeNpmConstraints splits an npm constraint string into individual constraints,
