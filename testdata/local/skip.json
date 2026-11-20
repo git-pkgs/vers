@@ -18,6 +18,16 @@
         "scheme": "npm"
       },
       "reason": "ParseNative returns an empty range for unsatisfiable npm comparators instead of an error."
+    },
+    {
+      "file": "vers-spec/tests/npm_range_from_native_test.json",
+      "test_type": "from_native",
+      "input": {
+        "native_range": "<=2.1 >=1.1",
+        "scheme": "npm"
+      },
+      "expected_output": "vers:npm/>=1.1.0|<=2.1.0",
+      "reason": "npm <=2.1 admits every 2.1.x, so the upper bound is <2.2.0."
     }
   ]
 }

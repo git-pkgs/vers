@@ -203,16 +203,26 @@ func TestParseNpmRangeErrors(t *testing.T) {
 
 func TestParseNpmIntersectionToVers(t *testing.T) {
 	tests := []struct {
-		input string
-		want  string
+		input    string
+		want     string
+		contains []string
+		excludes []string
 	}{
-		{">=5.0.3 >=4.2.1", "vers:npm/>=5.0.3"},
-		{">=4.2.1 >=5.0.3 <6.0.0 <7.0.0", "vers:npm/>=5.0.3|<6.0.0"},
-		{">1.0.0 >=1.0.0", "vers:npm/>1.0.0"},
-		{"<=2.1 >=1.1 >=1.0", "vers:npm/>=1.1.0|<=2.1.0"},
-		{"<=2.1 <2.1.5", "vers:npm/<2.1.5"},
-		{"^1.2.3 >=1.5.0", "vers:npm/>=1.5.0|<2.0.0"},
-		{">=1.0.0 <2.0.0 || >=3.0.0 >=3.1.0", "vers:npm/>=1.0.0|<2.0.0|>=3.1.0"},
+		{">=5.0.3 >=4.2.1", "vers:npm/>=5.0.3", []string{"5.0.3"}, []string{"4.2.1"}},
+		{">=4.2.1 >=5.0.3 <6.0.0 <7.0.0", "vers:npm/>=5.0.3|<6.0.0", []string{"5.5.0"}, []string{"6.0.0"}},
+		{">1.0.0 >=1.0.0", "vers:npm/>1.0.0", []string{"1.0.1"}, []string{"1.0.0"}},
+		{"<=2.1 >=1.1 >=1.0", "vers:npm/>=1.1.0|<2.2.0", []string{"2.1.9"}, []string{"1.0.5", "2.2.0"}},
+		{"<=2.1 <2.2.0", "vers:npm/<2.2.0", []string{"2.1.9"}, []string{"2.2.0"}},
+		{"<2.2.0 <=2.1", "vers:npm/<2.2.0", []string{"2.1.9"}, []string{"2.2.0"}},
+		{">1.2 <2.0.0", "vers:npm/>=1.3.0|<2.0.0", []string{"1.3.0"}, []string{"1.2.8"}},
+		{"1.2 >=1.2.3", "vers:npm/>=1.2.3|<1.3.0", []string{"1.2.5"}, []string{"1.2.0", "9.0.0"}},
+		{"<2.x >=1.0.0", "vers:npm/>=1.0.0|<2.0.0", []string{"1.9.0"}, []string{"2.5.0"}},
+		{"^1.2.3 >=1.5.0", "vers:npm/>=1.5.0|<2.0.0", []string{"1.5.0"}, []string{"1.4.0", "2.0.0"}},
+		{">=1.0.0 <2.0.0 || >=3.0.0 >=3.1.0", "vers:npm/>=1.0.0|<2.0.0|>=3.1.0", []string{"1.5.0", "3.1.0"}, []string{"3.0.0"}},
+		{"1.0.0 || >=2.0.0 <1.0.0", "vers:npm/1.0.0", []string{"1.0.0"}, []string{"2.0.0"}},
+		{"1.1.2 1.2.2", "vers:npm/<0.0.0-0", nil, []string{"1.1.2", "1.2.2", "999.0.0"}},
+		{">=1.0.0 ^1.2.3 <1.1.0", "vers:npm/<0.0.0-0", nil, []string{"1.0.5", "1.2.3"}},
+		{">=2.0.0 <1.0.0 || 1.1.2 1.2.2", "vers:npm/<0.0.0-0", nil, []string{"1.1.2", "2.0.0"}},
 	}
 	for _, tt := range tests {
 		r, err := ParseNative(tt.input, schemeNPM)
@@ -220,14 +230,30 @@ func TestParseNpmIntersectionToVers(t *testing.T) {
 			t.Errorf("ParseNative(%q, npm): %v", tt.input, err)
 			continue
 		}
-		if got := ToVersString(r, schemeNPM); got != tt.want {
+		got := ToVersString(r, schemeNPM)
+		if got != tt.want {
 			t.Errorf("ParseNative(%q, npm) = %q, want %q", tt.input, got, tt.want)
+		}
+		reparsed, err := Parse(got)
+		if err != nil {
+			t.Errorf("Parse(%q): %v", got, err)
+			continue
+		}
+		for _, v := range tt.contains {
+			if !r.Contains(v) || !reparsed.Contains(v) {
+				t.Errorf("%q: Contains(%q) = %v, reparsed %v, want true", tt.input, v, r.Contains(v), reparsed.Contains(v))
+			}
+		}
+		for _, v := range tt.excludes {
+			if r.Contains(v) || reparsed.Contains(v) {
+				t.Errorf("%q: Contains(%q) = %v, reparsed %v, want false", tt.input, v, r.Contains(v), reparsed.Contains(v))
+			}
 		}
 	}
 }
 
 func TestParseNpmUnsatisfiableIntersection(t *testing.T) {
-	for _, input := range []string{"1.1.2 1.2.2", ">=2.0.0 <1.0.0", ">=1.0.0 ^1.2.3 <1.1.0"} {
+	for _, input := range []string{"1.1.2 1.2.2", ">=2.0.0 <1.0.0", ">=2.0.0 <1.0.0 || 1.1.2 1.2.2"} {
 		r, err := ParseNative(input, schemeNPM)
 		if err != nil {
 			t.Errorf("ParseNative(%q, npm): %v", input, err)
@@ -236,17 +262,9 @@ func TestParseNpmUnsatisfiableIntersection(t *testing.T) {
 		if !r.IsEmpty() {
 			t.Errorf("ParseNative(%q, npm) is not empty", input)
 		}
-		if got := ToVersString(r, schemeNPM); got != "vers:npm/" {
-			t.Errorf("ParseNative(%q, npm) = %q, want %q", input, got, "vers:npm/")
-		}
 	}
-
-	r, err := ParseNative("1.0.0 || >=2.0.0 <1.0.0", schemeNPM)
-	if err != nil {
-		t.Fatalf("ParseNative: %v", err)
-	}
-	if got := ToVersString(r, schemeNPM); got != "vers:npm/1.0.0" {
-		t.Errorf("unsatisfiable alternative: got %q, want %q", got, "vers:npm/1.0.0")
+	if _, err := ParseNative("1.1.2 1.2.2 1.x.2", schemeNPM); err == nil {
+		t.Error("malformed comparator after a contradiction parsed without error")
 	}
 }
 
