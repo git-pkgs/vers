@@ -9,6 +9,15 @@
       },
       "expected_output": false,
       "reason": "VERS constraints cannot encode Conan's per-branch prerelease opt-in."
+    },
+    {
+      "file": "vers-spec/tests/npm_range_from_native_test.json",
+      "test_type": "from_native",
+      "input": {
+        "native_range": "1.1.2 1.2.2",
+        "scheme": "npm"
+      },
+      "reason": "ParseNative returns an empty range for unsatisfiable npm comparators instead of an error."
     }
   ]
 }

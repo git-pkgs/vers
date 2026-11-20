@@ -459,7 +459,7 @@ func (p *Parser) parseNpmRange(s string) (*Range, error) {
 		parts := tokenizeNpmConstraints(s)
 		ranges := make([]*Range, 0, len(parts))
 		var result *Range
-		for i, part := range parts {
+		for _, part := range parts {
 			r, err := p.parseNpmSingleRange(part)
 			if err != nil {
 				return nil, err
@@ -470,11 +470,11 @@ func (p *Parser) parseNpmRange(s string) (*Range, error) {
 				continue
 			}
 			result = result.Intersect(r)
-			if result.IsEmpty() {
-				return nil, npmUnsatisfiableError(parts, ranges, i)
-			}
 		}
-		if len(ranges) > 1 {
+		switch {
+		case result.IsEmpty():
+			result.RawConstraints = nil
+		case len(ranges) > 1:
 			result.RawConstraints = npmIntersectedRaw(ranges)
 		}
 		return result, nil
@@ -522,27 +522,6 @@ func tighterLower(a, b Interval) bool {
 func tighterUpper(a, b Interval) bool {
 	c := CompareVersions(a.Max, b.Max)
 	return c < 0 || (c == 0 && !a.MaxInclusive && b.MaxInclusive)
-}
-
-// npmUnsatisfiableError names the comparator at index last and an earlier one
-// it cannot be satisfied together with.
-func npmUnsatisfiableError(parts []string, ranges []*Range, last int) error {
-	conflict := 0
-	for i := range last {
-		if ranges[i].Intersect(ranges[last]).IsEmpty() {
-			conflict = i
-			break
-		}
-	}
-	return fmt.Errorf("space-separated npm comparators are intersected: %s and %s match no version",
-		npmComparatorString(parts[conflict]), npmComparatorString(parts[last]))
-}
-
-func npmComparatorString(part string) string {
-	if strings.ContainsAny(part[:1], "<>=!~^") {
-		return part
-	}
-	return "=" + part
 }
 
 // tokenizeNpmConstraints splits an npm constraint string into individual constraints,
