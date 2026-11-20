@@ -201,6 +201,53 @@ func TestParseNpmRangeErrors(t *testing.T) {
 	}
 }
 
+func TestParseNpmIntersectionToVers(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{">=5.0.3 >=4.2.1", "vers:npm/>=5.0.3"},
+		{">=4.2.1 >=5.0.3 <6.0.0 <7.0.0", "vers:npm/>=5.0.3|<6.0.0"},
+		{">1.0.0 >=1.0.0", "vers:npm/>1.0.0"},
+		{"<=2.1 >=1.1 >=1.0", "vers:npm/>=1.1.0|<=2.1.0"},
+		{"<=2.1 <2.1.5", "vers:npm/<2.1.5"},
+		{"^1.2.3 >=1.5.0", "vers:npm/>=1.5.0|<2.0.0"},
+		{">=1.0.0 <2.0.0 || >=3.0.0 >=3.1.0", "vers:npm/>=1.0.0|<2.0.0|>=3.1.0"},
+	}
+	for _, tt := range tests {
+		r, err := ParseNative(tt.input, schemeNPM)
+		if err != nil {
+			t.Errorf("ParseNative(%q, npm): %v", tt.input, err)
+			continue
+		}
+		if got := ToVersString(r, schemeNPM); got != tt.want {
+			t.Errorf("ParseNative(%q, npm) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestParseNpmUnsatisfiableIntersection(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"1.1.2 1.2.2", "space-separated npm comparators are intersected: =1.1.2 and =1.2.2 match no version"},
+		{">=2.0.0 <1.0.0", "space-separated npm comparators are intersected: >=2.0.0 and <1.0.0 match no version"},
+		{">=1.0.0 ^1.2.3 <1.1.0", "space-separated npm comparators are intersected: ^1.2.3 and <1.1.0 match no version"},
+		{"1.0.0 || >=2.0.0 <1.0.0", "space-separated npm comparators are intersected: >=2.0.0 and <1.0.0 match no version"},
+	}
+	for _, tt := range tests {
+		_, err := ParseNative(tt.input, schemeNPM)
+		if err == nil {
+			t.Errorf("ParseNative(%q, npm) succeeded", tt.input)
+			continue
+		}
+		if err.Error() != tt.want {
+			t.Errorf("ParseNative(%q, npm) error = %q, want %q", tt.input, err, tt.want)
+		}
+	}
+}
+
 func TestParseGemRange(t *testing.T) {
 	tests := []struct {
 		name    string
