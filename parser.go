@@ -542,6 +542,9 @@ func extractOperator(s string) (string, string) {
 
 func (p *Parser) parseNpmSingleRange(s string) (*Range, error) {
 	s = strings.TrimSpace(s)
+	if s == "-" {
+		return nil, fmt.Errorf("invalid npm range: hyphen without a version on both sides")
+	}
 	// Caret range: ^1.2.3
 	if strings.HasPrefix(s, "^") {
 		return p.parseCaretRange(s[1:])

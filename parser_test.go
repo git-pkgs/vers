@@ -194,7 +194,7 @@ func TestParseNpmRange(t *testing.T) {
 }
 
 func TestParseNpmRangeErrors(t *testing.T) {
-	for _, constraint := range []string{"1.x.2", "1.2.3.x"} {
+	for _, constraint := range []string{"1.x.2", "1.2.3.x", "-", "1.0.0 -", "- 1.0.0", "1.0.0 - 2.0.0 - 3.0.0", "1.0.0 || -"} {
 		if _, err := ParseNative(constraint, schemeNPM); err == nil {
 			t.Errorf("ParseNative(%q, npm) succeeded", constraint)
 		}
