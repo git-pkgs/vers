@@ -210,6 +210,10 @@ func (p *Parser) ToVersString(r *Range, scheme string) string {
 	}
 	// Check if empty but has raw constraints (preserve them for output)
 	if r.isEmptyFor(scheme) && len(r.RawConstraints) == 0 {
+		if scheme == schemeNPM {
+			// VERS has no empty range; this bound is below the lowest semver version.
+			return "vers:npm/<0.0.0-0"
+		}
 		return fmt.Sprintf("vers:%s/", scheme)
 	}
 
@@ -451,7 +455,7 @@ func (p *Parser) parseNpmRange(s string) (*Range, error) {
 			}
 		}
 		if len(allIntervals) == 0 {
-			return emptyNpmRange(), nil
+			return &Range{}, nil
 		}
 		return &Range{
 			Intervals:      mergeIntervals(allIntervals, CompareVersions),
@@ -461,8 +465,7 @@ func (p *Parser) parseNpmRange(s string) (*Range, error) {
 	}
 
 	// Handle space-separated AND constraints
-	if strings.ContainsAny(s, " \t\r\n") && !strings.Contains(s, " - ") {
-		parts := tokenizeNpmConstraints(s)
+	if parts := tokenizeNpmConstraints(s); len(parts) > 1 {
 		var result *Range
 		for _, part := range parts {
 			r, err := p.parseNpmSingleRange(part)
@@ -476,22 +479,14 @@ func (p *Parser) parseNpmRange(s string) (*Range, error) {
 			result = result.Intersect(r)
 		}
 		if result.IsEmpty() {
-			return emptyNpmRange(), nil
+			return &Range{}, nil
 		}
-		if len(parts) > 1 {
-			// Per-comparator constraints would serialize as a union.
-			result.RawConstraints = nil
-		}
+		// Per-comparator constraints would serialize as a union.
+		result.RawConstraints = nil
 		return result, nil
 	}
 
 	return p.parseNpmSingleRange(s)
-}
-
-// emptyNpmRange matches no version. VERS has no empty range, so it serializes
-// as a bound below the lowest semver version.
-func emptyNpmRange() *Range {
-	return &Range{RawConstraints: []Interval{NewInterval("", "0.0.0-0", false, false)}}
 }
 
 // tokenizeNpmConstraints splits an npm constraint string into individual constraints,
@@ -507,6 +502,11 @@ func tokenizeNpmConstraints(s string) []string {
 	i := 0
 	for i < len(tokens) {
 		token := tokens[i]
+		if i+2 < len(tokens) && tokens[i+1] == "-" {
+			result = append(result, token+" - "+tokens[i+2])
+			i += 3
+			continue
+		}
 		// Check if this token is just an operator
 		if isOperatorOnly(token) && i+1 < len(tokens) {
 			// Merge with next token

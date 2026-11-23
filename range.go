@@ -339,6 +339,11 @@ func (r *Range) UnionChecked(other *Range) (*Range, error) {
 func (r *Range) Intersect(other *Range) *Range {
 	left, right := rangesWithCommonScheme(r, other)
 
+	// The other side's constraints alone would serialize as a non-empty range.
+	if (left.IsEmpty() && len(left.RawConstraints) == 0) || (right.IsEmpty() && len(right.RawConstraints) == 0) {
+		return &Range{Scheme: left.Scheme}
+	}
+
 	// Combine raw constraints for VERS output (preserved even if result is empty)
 	rawConstraints := make([]Interval, 0, len(left.RawConstraints)+len(right.RawConstraints))
 	if len(left.RawConstraints) > 0 {

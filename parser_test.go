@@ -219,6 +219,8 @@ func TestParseNpmIntersectionToVers(t *testing.T) {
 		{"<2.x >=1.0.0", "vers:npm/>=1.0.0|<2.0.0", []string{"1.9.0"}, []string{"2.5.0"}},
 		{"^1.2.3 >=1.5.0", "vers:npm/>=1.5.0|<2.0.0", []string{"1.5.0"}, []string{"1.4.0", "2.0.0"}},
 		{">=1.0.0 <2.0.0 || >=3.0.0 >=3.1.0", "vers:npm/>=1.0.0|<2.0.0|>=3.1.0", []string{"1.5.0", "3.1.0"}, []string{"3.0.0"}},
+		{"1.2.3 - 2.0.0 <1.5.0", "vers:npm/>=1.2.3|<1.5.0", []string{"1.4.0"}, []string{"1.7.0"}},
+		{">=1.4.0 1.2.3 - 2.0.0", "vers:npm/>=1.4.0|<=2.0.0", []string{"2.0.0"}, []string{"1.3.0", "2.0.1"}},
 		{"1.0.0 || >=2.0.0 <1.0.0", "vers:npm/1.0.0", []string{"1.0.0"}, []string{"2.0.0"}},
 		{"1.1.2 1.2.2", "vers:npm/<0.0.0-0", nil, []string{"1.1.2", "1.2.2", "999.0.0"}},
 		{">=1.0.0 ^1.2.3 <1.1.0", "vers:npm/<0.0.0-0", nil, []string{"1.0.5", "1.2.3"}},
@@ -265,6 +267,30 @@ func TestParseNpmUnsatisfiableIntersection(t *testing.T) {
 	}
 	if _, err := ParseNative("1.1.2 1.2.2 1.x.2", schemeNPM); err == nil {
 		t.Error("malformed comparator after a contradiction parsed without error")
+	}
+}
+
+func TestIntersectEmptyNpmRangeToVers(t *testing.T) {
+	empty, err := ParseNative("1.1.2 1.2.2", schemeNPM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := ParseNative(">=1.0.0", schemeNPM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []*Range{empty.Intersect(other), other.Intersect(empty)} {
+		got := ToVersString(r, schemeNPM)
+		if got != "vers:npm/<0.0.0-0" {
+			t.Errorf("ToVersString = %q, want vers:npm/<0.0.0-0", got)
+		}
+		reparsed, err := Parse(got)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", got, err)
+		}
+		if r.Contains("1.5.0") || reparsed.Contains("1.5.0") {
+			t.Errorf("Contains(1.5.0) = %v, reparsed %v, want false", r.Contains("1.5.0"), reparsed.Contains("1.5.0"))
+		}
 	}
 }
 
@@ -637,7 +663,7 @@ func TestToVersString(t *testing.T) {
 		want   string
 	}{
 		{"unbounded", Unbounded(), "npm", "vers:npm/*"},
-		{"empty", Empty(), "npm", "vers:npm/"},
+		{"empty", Empty(), "npm", "vers:npm/<0.0.0-0"},
 		{"exact", Exact("1.0.0"), "npm", "vers:npm/1.0.0"},
 		{"greater than", GreaterThan("1.0.0", true), "npm", "vers:npm/>=1.0.0"},
 		{"less than", LessThan("2.0.0", false), "npm", "vers:npm/<2.0.0"},
