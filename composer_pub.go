@@ -51,6 +51,9 @@ func (p *Parser) parseComposerRange(constraint string) (*Range, error) {
 	}
 
 	parts := composerOrRegex.Split(constraint, -1)
+	if err := p.checkConstraints(len(parts)); err != nil {
+		return nil, err
+	}
 	if len(parts) == 1 {
 		return p.parseComposerConjunction(parts[0])
 	}
@@ -85,6 +88,9 @@ func (p *Parser) parseComposerConjunction(constraint string) (*Range, error) {
 	tokens := tokenizeNpmConstraints(strings.ReplaceAll(constraint, ",", " "))
 	if len(tokens) == 0 {
 		return nil, fmt.Errorf("empty composer constraint")
+	}
+	if err := p.checkConstraints(len(tokens)); err != nil {
+		return nil, err
 	}
 	var result *Range
 	for _, token := range tokens {
@@ -572,6 +578,9 @@ func (p *Parser) parsePubRange(constraint string) (*Range, error) {
 
 	tokens, err := tokenizePubConstraints(constraint)
 	if err != nil {
+		return nil, err
+	}
+	if err := p.checkConstraints(len(tokens)); err != nil {
 		return nil, err
 	}
 	var result *Range

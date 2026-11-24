@@ -793,7 +793,8 @@ func TestNpmParseManyClauses(t *testing.T) {
 	}
 	input := strings.Join(parts, " || ")
 
-	p := NewParser()
+	// Above the default limits, so raise them.
+	p := &Parser{MaxLength: len(input), MaxConstraints: len(parts)}
 	r, err := p.ParseNative(input, "npm")
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
