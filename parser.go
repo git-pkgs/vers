@@ -1,6 +1,7 @@
 package vers
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net/url"
@@ -41,7 +42,7 @@ func NewParser() *Parser {
 }
 
 func (p *Parser) checkLength(s string) error {
-	limit := cmpOr(p.MaxLength, DefaultMaxLength)
+	limit := cmp.Or(p.MaxLength, DefaultMaxLength)
 	if len(s) > limit {
 		return fmt.Errorf("%w (%d > %d)", ErrRangeTooLong, len(s), limit)
 	}
@@ -51,18 +52,11 @@ func (p *Parser) checkLength(s string) error {
 // checkConstraints bounds list sizes: intersecting or unioning each part
 // into the running range is quadratic in the number of parts.
 func (p *Parser) checkConstraints(n int) error {
-	limit := cmpOr(p.MaxConstraints, DefaultMaxConstraints)
+	limit := cmp.Or(p.MaxConstraints, DefaultMaxConstraints)
 	if n > limit {
 		return fmt.Errorf("%w (%d > %d)", ErrTooManyConstraints, n, limit)
 	}
 	return nil
-}
-
-func cmpOr(v, def int) int {
-	if v > 0 {
-		return v
-	}
-	return def
 }
 
 // Parse parses a vers URI string into a Range.
