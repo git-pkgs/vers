@@ -1,6 +1,7 @@
 package vers
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -10,16 +11,65 @@ import (
 
 var nginxRangeRegex = regexp.MustCompile(`^\d+(?:\.\d+)+-\d+(?:\.\d+)+$`)
 
-// Parser handles parsing of vers URIs and native package manager syntax.
-type Parser struct{}
+// Default limits, the same as the Ruby vers gem's.
+const (
+	DefaultMaxLength      = 2048
+	DefaultMaxConstraints = 64
+)
 
-// NewParser creates a new Parser.
+var (
+	// ErrRangeTooLong is returned when the input exceeds Parser.MaxLength.
+	ErrRangeTooLong = errors.New("range string too long")
+	// ErrTooManyConstraints is returned when a range lists more than
+	// Parser.MaxConstraints constraints or clauses.
+	ErrTooManyConstraints = errors.New("too many constraints")
+)
+
+// Parser handles parsing of vers URIs and native package manager syntax.
+//
+// MaxLength bounds the input to Parse and ParseNative in bytes, and
+// MaxConstraints bounds the constraints or clauses in one list. Zero means
+// the default.
+type Parser struct {
+	MaxLength      int
+	MaxConstraints int
+}
+
+// NewParser creates a new Parser with the default limits.
 func NewParser() *Parser {
-	return &Parser{}
+	return &Parser{MaxLength: DefaultMaxLength, MaxConstraints: DefaultMaxConstraints}
+}
+
+func (p *Parser) checkLength(s string) error {
+	limit := cmpOr(p.MaxLength, DefaultMaxLength)
+	if len(s) > limit {
+		return fmt.Errorf("%w (%d > %d)", ErrRangeTooLong, len(s), limit)
+	}
+	return nil
+}
+
+// checkConstraints bounds list sizes: intersecting or unioning each part
+// into the running range is quadratic in the number of parts.
+func (p *Parser) checkConstraints(n int) error {
+	limit := cmpOr(p.MaxConstraints, DefaultMaxConstraints)
+	if n > limit {
+		return fmt.Errorf("%w (%d > %d)", ErrTooManyConstraints, n, limit)
+	}
+	return nil
+}
+
+func cmpOr(v, def int) int {
+	if v > 0 {
+		return v
+	}
+	return def
 }
 
 // Parse parses a vers URI string into a Range.
 func (p *Parser) Parse(versURI string) (*Range, error) {
+	if err := p.checkLength(versURI); err != nil {
+		return nil, err
+	}
 	return p.parseVersURI(versURI, false)
 }
 
@@ -154,6 +204,9 @@ func isLowerASCIIHex(c byte) bool {
 
 // ParseNative parses a native package manager version range into a Range.
 func (p *Parser) ParseNative(constraint string, scheme string) (*Range, error) {
+	if err := p.checkLength(constraint); err != nil {
+		return nil, err
+	}
 	r, err := p.parseNative(constraint, scheme)
 	if r != nil {
 		r.Scheme = scheme
@@ -340,6 +393,9 @@ func normalizeVersion(version, scheme string) string {
 
 func (p *Parser) parseConstraints(constraintsStr, scheme string) (*Range, error) {
 	parts := strings.Split(constraintsStr, "|")
+	if err := p.checkConstraints(len(parts)); err != nil {
+		return nil, err
+	}
 	var intervals []Interval
 	var exclusions []string
 
@@ -435,6 +491,9 @@ func (p *Parser) parseNpmRange(s string) (*Range, error) {
 	// Handle || (OR) -- collect all parts, then merge once
 	if strings.Contains(s, "||") {
 		parts := strings.Split(s, "||")
+		if err := p.checkConstraints(len(parts)); err != nil {
+			return nil, err
+		}
 		var allIntervals []Interval
 		var allExclusions []string
 		var allRaw []Interval
@@ -466,6 +525,9 @@ func (p *Parser) parseNpmRange(s string) (*Range, error) {
 
 	// Handle space-separated AND constraints
 	if parts := tokenizeNpmConstraints(s); len(parts) > 1 {
+		if err := p.checkConstraints(len(parts)); err != nil {
+			return nil, err
+		}
 		var result *Range
 		for _, part := range parts {
 			r, err := p.parseNpmSingleRange(part)
@@ -813,6 +875,9 @@ func (p *Parser) parseGemRange(s string) (*Range, error) {
 	// Comma-separated constraints
 	if strings.Contains(s, ",") {
 		parts := strings.Split(s, ",")
+		if err := p.checkConstraints(len(parts)); err != nil {
+			return nil, err
+		}
 		var result *Range
 		for _, part := range parts {
 			r, err := p.parseGemRange(strings.TrimSpace(part))
@@ -902,8 +967,12 @@ func (p *Parser) parsePypiRange(s string) (*Range, error) {
 
 	// Comma is AND in PEP 440: parse each specifier and intersect.
 	if strings.Contains(s, ",") {
+		parts := strings.Split(s, ",")
+		if err := p.checkConstraints(len(parts)); err != nil {
+			return nil, err
+		}
 		var result *Range
-		for _, part := range strings.Split(s, ",") {
+		for _, part := range parts {
 			r, err := p.parsePypiRange(part)
 			if err != nil {
 				return nil, err
@@ -1049,8 +1118,12 @@ func (p *Parser) parseNugetRange(s string) (*Range, error) {
 func (p *Parser) parseCargoRange(s string) (*Range, error) {
 	s = strings.TrimSpace(s)
 	if strings.Contains(s, ",") {
+		parts := strings.Split(s, ",")
+		if err := p.checkConstraints(len(parts)); err != nil {
+			return nil, err
+		}
 		var result *Range
-		for _, part := range strings.Split(s, ",") {
+		for _, part := range parts {
 			r, err := p.parseCargoRange(part)
 			if err != nil {
 				return nil, err
@@ -1111,6 +1184,9 @@ func (p *Parser) parseHexRange(s string) (*Range, error) {
 	// Handle "or" disjunction -- collect all parts, then merge once
 	if strings.Contains(s, " or ") {
 		parts := strings.Split(s, " or ")
+		if err := p.checkConstraints(len(parts)); err != nil {
+			return nil, err
+		}
 		var allIntervals []Interval
 		var allRaw []Interval
 		for _, part := range parts {
@@ -1138,6 +1214,9 @@ func (p *Parser) parseHexSingleRange(s string) (*Range, error) {
 	// Handle "and" conjunction
 	if strings.Contains(s, " and ") {
 		parts := strings.Split(s, " and ")
+		if err := p.checkConstraints(len(parts)); err != nil {
+			return nil, err
+		}
 		var result *Range
 		for _, part := range parts {
 			r, err := p.parseHexConstraint(strings.TrimSpace(part))
